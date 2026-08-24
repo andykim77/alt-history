@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Alt History Explorer
 
-## Getting Started
+An interactive chat where you propose a historical divergence ("what if the printing
+press was never invented?") and an LLM narrates how the world unfolds from there.
+Built with Next.js (App Router) and [OpenRouter](https://openrouter.ai)'s free-tier models.
 
-First, run the development server:
+## Setup
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. **Get a free OpenRouter API key**
+   - Sign up at https://openrouter.ai
+   - Create a key at https://openrouter.ai/keys
+   - Browse currently available free models at https://openrouter.ai/models?max_price=0
+     (the free catalog rotates — swap `OPENROUTER_MODEL` below if your chosen model is
+     retired or rate-limited)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. **Configure environment variables**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+   ```bash
+   cp .env.local.example .env.local
+   ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+   Then edit `.env.local` and paste in your key:
 
-## Learn More
+   ```
+   OPENROUTER_API_KEY=sk-or-v1-...
+   OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free
+   SITE_URL=http://localhost:3000
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+3. **Install and run**
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+   ```bash
+   npm install
+   npm run dev
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   Open http://localhost:3000.
 
-## Deploy on Vercel
+## How it works
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `app/api/chat/route.ts` — a server-side route that holds the API key and streams
+  responses from OpenRouter's OpenAI-compatible `/chat/completions` endpoint back to
+  the browser as Server-Sent Events. The key never reaches client code.
+- `app/chat-client.tsx` — the chat UI. Parses the SSE stream token-by-token and renders
+  it as it arrives.
+- The system prompt (in `route.ts`) frames the model as an alt-history narrator —
+  adjust tone/length/rules there.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Notes on the free tier
+
+OpenRouter's `:free` models have per-minute and per-day rate limits, and the specific
+models offered for free change over time. If requests start failing, check
+https://openrouter.ai/models?max_price=0 for a currently-available model and update
+`OPENROUTER_MODEL` in `.env.local`.
+
+## Deploying
+
+Deploys like any Next.js app (e.g. [Vercel](https://vercel.com/new)) — just set
+`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, and `SITE_URL` as environment variables on
+the host.

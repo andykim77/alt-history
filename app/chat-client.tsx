@@ -8,7 +8,9 @@ import {
   leaves,
   loadStore,
   newScenario,
+  norm,
   pathTo,
+  renamePairs,
   saveStore,
   scenarioDisplayTitle,
   toApiMessages,
@@ -62,7 +64,16 @@ export default function ChatClient() {
   );
   const path = useMemo(() => (active ? pathTo(active, active.leafId) : []), [active]);
   const pathEvents = useMemo(() => eventsOnPath(path), [path]);
-  const world = useMemo(() => worldOnPath(path), [path]);
+  const world = useMemo(() => worldOnPath(path, active?.renames), [path, active?.renames]);
+
+  function renameEntity(from: string, to: string) {
+    if (!active) return;
+    updateScenario(active.id, (s) => ({
+      ...s,
+      renames: { ...(s.renames ?? {}), [norm(from)]: to },
+      updatedAt: Date.now(),
+    }));
+  }
 
   const updateScenario = useCallback((id: string, fn: (s: Scenario) => Scenario) => {
     setStore((prev) => ({
@@ -154,12 +165,13 @@ export default function ChatClient() {
     // Build the request from the tree *before* the state update lands.
     const parentPath = pathTo(scenario, parentId);
     const request: ChatRequest = {
-      messages: toApiMessages([...parentPath, userNode]),
+      messages: toApiMessages([...parentPath, userNode], scenario.renames),
       scenario: {
         title: scenario.grounded ? scenario.title : undefined,
         divergence: scenario.grounded ? scenario.divergence : undefined,
         divergenceYear: scenario.grounded ? scenario.divergenceYear : null,
         sourceTitles: scenario.sourceTitles,
+        renames: renamePairs(scenario.renames),
       },
     };
 
@@ -357,8 +369,8 @@ export default function ChatClient() {
         {tab === "timeline" && (
           <Timeline events={pathEvents} sources={active.sources} divergenceYear={active.divergenceYear} />
         )}
-        {tab === "figures" && <Figures figures={world.figures} sources={active.sources} />}
-        {tab === "powers" && <Powers powers={world.powers} />}
+        {tab === "figures" && <Figures figures={world.figures} sources={active.sources} onRename={renameEntity} />}
+        {tab === "powers" && <Powers powers={world.powers} onRename={renameEntity} />}
         {tab === "changes" && <Ledger ledger={world.ledger} sources={active.sources} />}
         {tab === "sources" && <SourceList sources={active.sources} />}
         {tab === "compare" && (

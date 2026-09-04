@@ -31,7 +31,7 @@ function analysisPrompt(prompt: string): string {
     "",
     "Return JSON with:",
     '- "title": a short scenario title (max 8 words)',
-    '- "divergence": one sentence stating the point of divergence from real history',
+    '- "divergence": one short sentence (max 30 words) stating the point of divergence from real history',
     '- "divergence_year": the calendar year of the divergence as an integer (negative for BCE), or null if unclear',
     '- "queries": 3 to 4 English Wikipedia search queries that would retrieve the REAL history immediately before and around the divergence (people, events, institutions, technologies involved). Use article-like names, e.g. "Printing press", "Johannes Gutenberg".',
   ].join("\n");
@@ -44,9 +44,29 @@ async function analyzeDivergence(prompt: string): Promise<GroundingJson> {
       { role: "system", content: ANALYSIS_SYSTEM },
       { role: "user", content: analysisPrompt(prompt) },
     ],
-    { maxTokens: 300, temperature: 0.1 }
+    { maxTokens: 700, temperature: 0.1 }
   );
-  return extractJsonObject<GroundingJson>(text) ?? {};
+  return extractJsonObject<GroundingJson>(text) ?? salvageAnalysis(text);
+}
+
+/** Pull fields out of a truncated or slightly malformed analysis reply. */
+function salvageAnalysis(text: string): GroundingJson {
+  const str = (key: string) => {
+    const m = new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(text);
+    return m ? m[1].replace(/\\"/g, '"') : undefined;
+  };
+  const yearM = /"divergence_year"\s*:\s*(-?\d{1,4}|null)/.exec(text);
+  const queries = [...text.matchAll(/"queries"\s*:\s*\[([\s\S]*)/g)]
+    .flatMap((m) => [...m[1].matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((q) => q[1]))
+    .slice(0, 4);
+  const out: GroundingJson = {
+    title: str("title"),
+    divergence: str("divergence"),
+    divergence_year: yearM && yearM[1] !== "null" ? parseInt(yearM[1], 10) : null,
+    queries,
+  };
+  if (out.title) console.warn("[grounding] analysis JSON salvaged by regex");
+  return out;
 }
 
 function fallbackTitle(prompt: string): string {
@@ -99,8 +119,10 @@ export async function groundTurn(
     let analysis: GroundingJson = {};
     try {
       analysis = await analyzeDivergence(latestUserMessage);
-    } catch {
+      if (!analysis.title) console.warn("[grounding] analysis returned no usable JSON");
+    } catch (err) {
       // Fall through to heuristics; the narrator can still run with weaker grounding.
+      console.warn("[grounding] analysis call failed:", err instanceof Error ? err.message : err);
     }
     title = (analysis.title || fallbackTitle(latestUserMessage)).trim();
     divergence = (analysis.divergence || latestUserMessage).trim();

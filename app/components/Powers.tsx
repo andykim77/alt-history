@@ -1,6 +1,7 @@
 "use client";
 
 import type { Posture, Power, Relation } from "@/lib/types";
+import { EditableName } from "./EditableName";
 
 const POSTURE: Record<Posture, { label: string; cls: string }> = {
   expanding: { label: "expanding", cls: "text-emerald-700 dark:text-emerald-300 bg-emerald-500/15" },
@@ -33,7 +34,13 @@ function Strength({ n }: { n: number }) {
   );
 }
 
-export function Powers({ powers }: { powers: Power[] }) {
+export function Powers({
+  powers,
+  onRename,
+}: {
+  powers: Power[];
+  onRename: (from: string, to: string) => void;
+}) {
   if (powers.length === 0) {
     return (
       <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -54,7 +61,9 @@ export function Powers({ powers }: { powers: Power[] }) {
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <div className="font-serif text-[15px] leading-tight">{p.name}</div>
+                <div className="font-serif text-[15px] leading-tight">
+                  <EditableName value={p.name} onRename={(next) => onRename(p.name, next)} />
+                </div>
                 <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 flex items-center gap-2">
                   {p.kind && <span className="capitalize">{p.kind}</span>}
                   <Strength n={p.strength} />

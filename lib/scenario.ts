@@ -1,7 +1,20 @@
 // Client-side scenario model: a tree of messages (so any turn can be branched),
 // persisted to localStorage.
 
-import type { ApiMessage, Figure, LedgerEntry, Power, Role, Source, TimelineEvent, WorldUpdate } from "./types";
+import {
+  dateOrdinal,
+  type ApiMessage,
+  type Figure,
+  type LedgerEntry,
+  type Power,
+  type Role,
+  type Source,
+  type TimelineEvent,
+  type WorldUpdate,
+} from "./types";
+
+/** User renames keyed by the normalised displayed name; chains are followed. */
+export type Renames = Record<string, string>;
 
 export type NodeStatus = "streaming" | "stopped" | "error";
 
@@ -32,6 +45,8 @@ export type Scenario = {
   sources: Source[];
   /** Label of the model/provider that last narrated this scenario. */
   engine?: string;
+  /** Figure/power names the user has edited. */
+  renames?: Renames;
   nodes: Record<string, MessageNode>;
   /** The node currently displayed at the bottom of the thread. */
   leafId: string | null;
@@ -156,22 +171,61 @@ export type WorldState = {
   flashpoints: string[];
 };
 
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+export const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** Resolve a name through the rename map, following chains (A→B, B→C). */
+export function resolveName(name: string, renames: Renames | undefined): string {
+  if (!renames) return name;
+  let cur = name;
+  for (let i = 0; i < 6; i++) {
+    const next = renames[norm(cur)];
+    if (!next || next === cur) break;
+    cur = next;
+  }
+  return cur;
+}
+
+/** Apply user renames to every name-bearing field of an update. */
+export function applyRenames(u: WorldUpdate, renames: Renames | undefined): WorldUpdate {
+  if (!renames || Object.keys(renames).length === 0) return u;
+  const r = (s: string) => resolveName(s, renames);
+  return {
+    ...u,
+    figures: u.figures.map((f) => ({ ...f, name: r(f.name), faction: f.faction ? r(f.faction) : f.faction })),
+    powers: u.powers.map((p) => ({
+      ...p,
+      name: r(p.name),
+      relations: p.relations.map((rel) => ({ ...rel, with: r(rel.with) })),
+    })),
+  };
+}
+
+/** The rename map as (from → to) pairs for the server, one per chain start. */
+export function renamePairs(renames: Renames | undefined): { from: string; to: string }[] {
+  if (!renames) return [];
+  const out: { from: string; to: string }[] = [];
+  for (const [key, to] of Object.entries(renames)) {
+    const final = resolveName(to, renames);
+    if (norm(final) !== key) out.push({ from: key, to: final });
+  }
+  return out;
+}
 
 /** Fold every reply's update along a path into the current world state.
- *  Figures and powers are keyed by name (later entries replace earlier ones,
- *  keeping first-seen order); ledger rows accumulate; flashpoints are the latest. */
-export function worldOnPath(path: MessageNode[]): WorldState {
+ *  Figures and powers are keyed by (renamed) name — later entries replace earlier
+ *  ones, keeping first-seen order; ledger rows accumulate; flashpoints are the latest. */
+export function worldOnPath(path: MessageNode[], renames?: Renames): WorldState {
   const figures = new Map<string, Figure>();
   const powers = new Map<string, Power>();
   const ledger: LedgerEntry[] = [];
   let flashpoints: string[] = [];
   for (const n of path) {
     if (n.role !== "assistant" || !n.update) continue;
-    for (const f of n.update.figures) figures.set(norm(f.name), f);
-    for (const p of n.update.powers) powers.set(norm(p.name), p);
-    ledger.push(...n.update.ledger);
-    if (n.update.flashpoints.length) flashpoints = n.update.flashpoints;
+    const u = applyRenames(n.update, renames);
+    for (const f of u.figures) figures.set(norm(f.name), f);
+    for (const p of u.powers) powers.set(norm(p.name), p);
+    ledger.push(...u.ledger);
+    if (u.flashpoints.length) flashpoints = u.flashpoints;
   }
   return {
     figures: [...figures.values()],
@@ -187,21 +241,24 @@ export function worldOnPath(path: MessageNode[]): WorldState {
 export function sortEvents<T extends TimelineEvent>(events: T[]): T[] {
   return events
     .map((e, i) => ({ e, i }))
-    .sort((a, b) => a.e.year - b.e.year || a.i - b.i)
+    .sort((a, b) => dateOrdinal(a.e) - dateOrdinal(b.e) || a.i - b.i)
     .map((x) => x.e);
 }
 
-export function toApiMessages(path: MessageNode[]): ApiMessage[] {
+export function toApiMessages(path: MessageNode[], renames?: Renames): ApiMessage[] {
   return path
     .filter((n) => n.content.trim().length > 0 || n.role === "user")
-    .map((n) => ({
-      role: n.role,
-      content: n.content,
-      update:
+    .map((n) => {
+      const raw =
         n.role === "assistant"
           ? n.update ?? (n.events.length ? { events: n.events, figures: [], powers: [], ledger: [], flashpoints: [] } : undefined)
-          : undefined,
-    }));
+          : undefined;
+      return {
+        role: n.role,
+        content: n.content,
+        update: raw ? applyRenames(raw, renames) : undefined,
+      };
+    });
 }
 
 /** Human label for a branch: its last user message, shortened. */

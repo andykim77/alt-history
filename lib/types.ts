@@ -16,6 +16,10 @@ export type EventType = "history" | "divergence" | "alt";
 export type TimelineEvent = {
   /** Calendar year; negative for BCE. */
   year: number;
+  /** 1-12 when known. */
+  month?: number | null;
+  /** 1-31 when known (only meaningful with month). */
+  day?: number | null;
   label: string;
   type: EventType;
   /** Citation number into the scenario's source list, if the event is sourced. */
@@ -92,7 +96,48 @@ export type ScenarioMeta = {
   divergenceYear?: number | null;
   /** Wikipedia titles already used as sources, in citation order. */
   sourceTitles: string[];
+  /** Names the user has changed in the dossier; the model should adopt them. */
+  renames?: { from: string; to: string }[];
 };
+
+/** Parse "YYYY", "YYYY-MM", "YYYY-MM-DD" (leading "-" for BCE) or a bare year. */
+export function parseEventDate(v: unknown): { year: number; month: number | null; day: number | null } | null {
+  if (typeof v === "number" && Number.isFinite(v)) return { year: Math.trunc(v), month: null, day: null };
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  const m = /^(-?)(\d{1,4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/.exec(s);
+  if (m) {
+    const year = (m[1] ? -1 : 1) * parseInt(m[2], 10);
+    const month = m[3] ? parseInt(m[3], 10) : null;
+    const day = m[4] ? parseInt(m[4], 10) : null;
+    const okMonth = month !== null && month >= 1 && month <= 12 ? month : null;
+    const okDay = okMonth !== null && day !== null && day >= 1 && day <= 31 ? day : null;
+    return { year, month: okMonth, day: okDay };
+  }
+  // Tolerate "216 BCE" / "1453 AD" style.
+  const y = /(-?\d{1,4})\s*(BCE?|BC|AD|CE)?/i.exec(s);
+  if (!y) return null;
+  const n = parseInt(y[1], 10);
+  const bce = y[2] && /^bc/i.test(y[2]);
+  return { year: bce && n > 0 ? -n : n, month: null, day: null };
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "29 May 1453", "May 1453", "1453", "2 Aug 216 BCE". */
+export function formatEventDate(e: { year: number; month?: number | null; day?: number | null }): string {
+  const y = e.year < 0 ? `${-e.year} BCE` : String(e.year);
+  if (e.month && e.month >= 1 && e.month <= 12) {
+    const mon = MONTHS[e.month - 1];
+    return e.day ? `${e.day} ${mon} ${y}` : `${mon} ${y}`;
+  }
+  return y;
+}
+
+/** Sort key: unknown month/day sort before known ones within the same year. */
+export function dateOrdinal(e: { year: number; month?: number | null; day?: number | null }): number {
+  return e.year * 10000 + (e.month ?? 0) * 100 + (e.day ?? 0);
+}
 
 export type ChatRequest = {
   messages: ApiMessage[];

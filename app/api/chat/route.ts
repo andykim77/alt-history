@@ -5,6 +5,7 @@ import { engineLabel, stream as llmStream, supportsStreaming, type LlmMessage } 
 import {
   STATE_DELIMITER,
   emptyUpdate,
+  parseEventDate,
   type ApiMessage,
   type ChatRequest,
   type Figure,
@@ -27,24 +28,30 @@ function yearLabel(y: number | null): string {
 }
 
 const STATE_SCHEMA = `{
-  "events": [ {"year": <int, negative for BCE>, "label": "<max 80 chars>", "type": "history"|"divergence"|"alt", "source": <citation number or null>} ],
+  "events": [ {"date": "<YYYY-MM-DD, YYYY-MM or YYYY; leading '-' for BCE, e.g. '1453-05-29', '1347-10', '-0216'>", "label": "<max 80 chars>", "type": "history"|"divergence"|"alt", "source": <citation number or null>} ],
   "figures": [ {"name": "...", "role": "<title or function>", "faction": "<power they serve>", "status": "rising"|"stable"|"declining"|"dead"|"unknown", "realFate": "<what happened to them in real history, one sentence>", "altFate": "<what is happening to them here, one sentence>", "source": <citation number or null>} ],
   "powers": [ {"name": "...", "kind": "<empire|kingdom|republic|church|league|dynasty|company|movement>", "strength": <1-5>, "posture": "expanding"|"consolidating"|"defensive"|"fracturing"|"collapsing"|"emerging", "interests": ["<strategic interest: what they want and why, max 90 chars>", ...], "relations": [ {"with": "<other power name>", "kind": "ally"|"rival"|"war"|"vassal"|"trade"|"neutral"} ]} ],
   "ledger": [ {"year": <int>, "ours": "<what happened in real history, max 100 chars>", "theirs": "<what happens in this timeline instead, max 100 chars>", "source": <citation number or null>} ],
   "flashpoints": ["<an open tension or decision point the user could explore next, phrased as a question, max 90 chars>", "...", "..."]
 }`;
 
-function buildSystemPrompt(g: Grounding): string {
+function buildSystemPrompt(g: Grounding, renames: { from: string; to: string }[]): string {
   const sourceBlock =
     g.pages.length === 0
       ? "(No sources could be retrieved for this turn. Be explicit about uncertainty for pre-divergence claims.)"
       : g.pages.map((p, i) => `[${i + 1}] ${p.title} — ${p.url}\n${p.extract}`).join("\n\n");
+  const renameBlock =
+    renames.length === 0
+      ? ""
+      : `\nNAMES CHOSEN BY THE USER — always use the right-hand form for these figures and powers, in prose and in the JSON:\n${renames
+          .map((r) => `- "${r.from}" → "${r.to}"`)
+          .join("\n")}\n`;
 
   return `You are the narrator and archivist of an interactive alternate-history exploration. Besides narrating, you maintain a structured dossier of the world: its timeline, key figures, powers and their strategic interests, and a ledger of what changed versus real history.
 
 SCENARIO: ${g.title}
 POINT OF DIVERGENCE: ${g.divergence} (${yearLabel(g.divergenceYear)})
-
+${renameBlock}
 VERIFIED SOURCES — real history, from Wikipedia. Anything before the point of divergence must agree with these:
 ${sourceBlock}
 
@@ -56,7 +63,7 @@ RULES
 5. After the prose, on its own line, write exactly ${STATE_DELIMITER} and then ONE JSON object with this shape:
 ${STATE_SCHEMA}
 Guidance for the JSON:
-- events: 3 to 6 NEW dated events introduced in this reply; never repeat events already on the timeline. Use "history" for real pre-divergence events (with a source), "divergence" for the change itself (once, in the first reply), and "alt" for speculative consequences.
+- events: 3 to 6 NEW dated events introduced in this reply; never repeat events already on the timeline. Give the most precise date you can justify: real events get the day and month when the sources or well-established history record them; speculative events may carry a month or day when the narrative fixes one, otherwise year only. Never invent a day to look precise. Use "history" for real pre-divergence events (with a source), "divergence" for the change itself (once, in the first reply), and "alt" for speculative consequences.
 - figures: 2 to 4 people who matter in this reply. Re-list a figure only if their status or altFate changed; a re-listed figure replaces the earlier entry. realFate must match the sources when covered.
 - powers: 2 to 4 powers active in this reply; each entry is that power's CURRENT full state (2 to 4 interests, relations to other named powers) and replaces any earlier entry for the same name.
 - ledger: 1 to 3 rows contrasting real history with this timeline at specific years.
@@ -108,11 +115,18 @@ function sanitizeUpdate(raw: unknown, sourceCount: number): WorldUpdate {
   if (Array.isArray(r.events)) {
     for (const e of r.events as Record<string, unknown>[]) {
       if (!e || typeof e !== "object") continue;
-      const year = asInt(e.year);
+      const when = parseEventDate(e.date ?? e.year);
       const label = asStr(e.label, 120);
-      if (year === null || !label) continue;
+      if (!when || !label) continue;
       const type = oneOf(e.type, ["history", "divergence", "alt"] as const, "alt");
-      const ev: TimelineEvent = { year, label, type, source: type === "alt" ? null : citation(e.source, sourceCount) };
+      const ev: TimelineEvent = {
+        year: when.year,
+        month: when.month,
+        day: when.day,
+        label,
+        type,
+        source: type === "alt" ? null : citation(e.source, sourceCount),
+      };
       u.events.push(ev);
     }
     u.events = u.events.slice(0, 8);
@@ -200,6 +214,9 @@ function parseUpdate(raw: string, sourceCount: number): WorldUpdate {
     const arr = salvageArray(raw, key);
     if (arr) salvaged[key] = arr;
   }
+  console.warn(
+    `[dossier] world-state JSON did not parse (${raw.length} chars); salvaged: ${Object.keys(salvaged).join(",") || "nothing"}; tail: ${JSON.stringify(raw.slice(-80))}`
+  );
   if (Object.keys(salvaged).length > 0) return sanitizeUpdate(salvaged, sourceCount);
   // Tolerate a bare events array (older format).
   if (raw.indexOf("[") >= 0) return sanitizeUpdate({ events: safeArray(raw) }, sourceCount);
@@ -320,6 +337,10 @@ export async function POST(req: NextRequest) {
     sourceTitles: Array.isArray(body?.scenario?.sourceTitles)
       ? body!.scenario!.sourceTitles.filter((t): t is string => typeof t === "string").slice(0, 8)
       : [],
+    renames: (Array.isArray(body?.scenario?.renames) ? body!.scenario!.renames : [])
+      .filter((r) => r && typeof r.from === "string" && typeof r.to === "string" && r.from !== r.to)
+      .map((r) => ({ from: r.from.slice(0, 80), to: r.to.slice(0, 80) }))
+      .slice(0, 40),
   };
 
   const latestUser = messages[messages.length - 1].content;
@@ -349,7 +370,7 @@ export async function POST(req: NextRequest) {
         });
 
         const upstreamMessages: LlmMessage[] = [
-          { role: "system", content: buildSystemPrompt(grounding) },
+          { role: "system", content: buildSystemPrompt(grounding, meta.renames) },
           ...messages.map((m) => ({
             role: m.role,
             content: m.role === "assistant" ? serializeAssistant(m) : m.content,

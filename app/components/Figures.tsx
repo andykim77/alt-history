@@ -1,6 +1,7 @@
 "use client";
 
 import type { Figure, FigureStatus, Source } from "@/lib/types";
+import { EditableName } from "./EditableName";
 
 const STATUS: Record<FigureStatus, { label: string; cls: string }> = {
   rising: { label: "rising", cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" },
@@ -10,7 +11,15 @@ const STATUS: Record<FigureStatus, { label: string; cls: string }> = {
   unknown: { label: "unknown", cls: "bg-zinc-500/10 text-zinc-500" },
 };
 
-export function Figures({ figures, sources }: { figures: Figure[]; sources: Source[] }) {
+export function Figures({
+  figures,
+  sources,
+  onRename,
+}: {
+  figures: Figure[];
+  sources: Source[];
+  onRename: (from: string, to: string) => void;
+}) {
   if (figures.length === 0) {
     return (
       <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -32,13 +41,15 @@ export function Figures({ figures, sources }: { figures: Figure[]; sources: Sour
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="font-serif text-[15px] leading-tight">
-                  {src ? (
-                    <a href={src.url} target="_blank" rel="noreferrer" className="hover:underline">
-                      {f.name}
-                    </a>
-                  ) : (
-                    f.name
-                  )}
+                  <EditableName value={f.name} onRename={(next) => onRename(f.name, next)}>
+                    {src ? (
+                      <a href={src.url} target="_blank" rel="noreferrer" className="hover:underline">
+                        {f.name}
+                      </a>
+                    ) : (
+                      f.name
+                    )}
+                  </EditableName>
                 </div>
                 <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">
                   {f.role}

@@ -1,7 +1,7 @@
 "use client";
 
-import { formatYear, sortEvents } from "@/lib/scenario";
-import type { EventType, Source, TimelineEvent } from "@/lib/types";
+import { sortEvents } from "@/lib/scenario";
+import { formatEventDate, type EventType, type Source, type TimelineEvent } from "@/lib/types";
 
 export const TYPE_STYLE: Record<EventType, { dot: string; label: string }> = {
   history: { dot: "bg-zinc-400 dark:bg-zinc-500", label: "Real history" },
@@ -34,7 +34,7 @@ export function EventRow({
       {compact ? (
         <div>
           <div className="font-mono text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400 leading-tight">
-            {formatYear(ev.year)}
+            {formatEventDate(ev)}
           </div>
           <div className="text-[13px] leading-snug">
             {ev.label}
@@ -43,8 +43,8 @@ export function EventRow({
         </div>
       ) : (
         <div className="flex items-baseline gap-2">
-          <span className="font-mono text-xs tabular-nums text-zinc-500 dark:text-zinc-400 w-14 shrink-0">
-            {formatYear(ev.year)}
+          <span className="font-mono text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400 w-[5.5rem] shrink-0 leading-snug">
+            {formatEventDate(ev)}
           </span>
           <span className="text-sm leading-snug">
             {ev.label}

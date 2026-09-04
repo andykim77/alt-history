@@ -1,40 +1,176 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  deepestLeaf,
+  emptyStore,
+  eventsOnPath,
+  leaves,
+  loadStore,
+  newScenario,
+  pathTo,
+  saveStore,
+  scenarioDisplayTitle,
+  toApiMessages,
+  uid,
+  type MessageNode,
+  type Scenario,
+  type Store,
+} from "@/lib/scenario";
+import type { ChatRequest, StreamEvent } from "@/lib/types";
+import { Sidebar } from "./components/Sidebar";
+import { Thread } from "./components/Thread";
+import { SourceList, Timeline } from "./components/Timeline";
+import { Compare } from "./components/Compare";
 
-type Message = { role: "user" | "assistant"; content: string };
-
-const STARTERS = [
-  "What if the printing press was never invented?",
-  "What if the Library of Alexandria never burned?",
-  "What if the Black Death never reached Europe?",
-  "What if Byzantium never fell in 1453?",
-];
+type PanelTab = "timeline" | "sources" | "compare";
+type Drawer = "left" | "right" | null;
 
 export default function ChatClient() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const [store, setStore] = useState<Store>(emptyStore);
+  const [loaded, setLoaded] = useState(false);
+  const [streaming, setStreaming] = useState<{ scenarioId: string; nodeId: string } | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [tab, setTab] = useState<PanelTab>("timeline");
+  const [drawer, setDrawer] = useState<Drawer>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  async function send(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed || isStreaming) return;
+  // ----- persistence -----
+  useEffect(() => {
+    setStore(loadStore());
+    setLoaded(true);
+  }, []);
+  useEffect(() => {
+    if (loaded) saveStore(store);
+  }, [store, loaded]);
 
-    setError(null);
-    const nextMessages: Message[] = [...messages, { role: "user", content: trimmed }];
-    setMessages([...nextMessages, { role: "assistant", content: "" }]);
-    setInput("");
-    setIsStreaming(true);
+  const active = useMemo(
+    () => store.scenarios.find((s) => s.id === store.activeId) ?? null,
+    [store]
+  );
+  const path = useMemo(() => (active ? pathTo(active, active.leafId) : []), [active]);
+  const pathEvents = useMemo(() => eventsOnPath(path), [path]);
+
+  const updateScenario = useCallback((id: string, fn: (s: Scenario) => Scenario) => {
+    setStore((prev) => ({
+      ...prev,
+      scenarios: prev.scenarios.map((s) => (s.id === id ? fn(s) : s)),
+    }));
+  }, []);
+
+  const updateNode = useCallback(
+    (scenarioId: string, nodeId: string, fn: (n: MessageNode) => MessageNode) => {
+      updateScenario(scenarioId, (s) => {
+        const n = s.nodes[nodeId];
+        if (!n) return s;
+        return { ...s, nodes: { ...s.nodes, [nodeId]: fn(n) }, updatedAt: Date.now() };
+      });
+    },
+    [updateScenario]
+  );
+
+  // ----- scenario management -----
+  function createScenario(): Scenario {
+    const s = newScenario();
+    setStore((prev) => ({ ...prev, scenarios: [...prev.scenarios, s], activeId: s.id }));
+    return s;
+  }
+  function selectScenario(id: string) {
+    setStore((prev) => ({ ...prev, activeId: id }));
+    setDrawer(null);
+  }
+  function deleteScenario(id: string) {
+    if (streaming?.scenarioId === id) stop();
+    setStore((prev) => {
+      const scenarios = prev.scenarios.filter((s) => s.id !== id);
+      const activeId =
+        prev.activeId === id ? (scenarios.length ? scenarios[scenarios.length - 1].id : null) : prev.activeId;
+      return { ...prev, scenarios, activeId };
+    });
+  }
+
+  // ----- branching -----
+  function setLeaf(scenarioId: string, leafId: string) {
+    updateScenario(scenarioId, (s) => ({ ...s, leafId }));
+  }
+  function switchSibling(nodeId: string) {
+    if (!active) return;
+    setLeaf(active.id, deepestLeaf(active, nodeId));
+  }
+  function branchHere(nodeId: string) {
+    if (!active) return;
+    setLeaf(active.id, nodeId);
+  }
+  function resumeLatest() {
+    if (!active || !active.leafId) return;
+    setLeaf(active.id, deepestLeaf(active, active.leafId));
+  }
+
+  // ----- streaming -----
+  function stop() {
+    abortRef.current?.abort();
+  }
+
+  async function send(text: string, parentId: string | null) {
+    if (streaming) return;
+    let scenario = active;
+    if (!scenario || (parentId === null && Object.keys(scenario.nodes).length > 0)) {
+      // No active scenario, or a starter clicked from a blank state: start fresh.
+      scenario = scenario && Object.keys(scenario.nodes).length === 0 ? scenario : createScenario();
+    }
+    const scenarioId = scenario.id;
+    const now = Date.now();
+    const userNode: MessageNode = {
+      id: uid(),
+      parentId,
+      role: "user",
+      content: text,
+      events: [],
+      createdAt: now,
+    };
+    const assistantNode: MessageNode = {
+      id: uid(),
+      parentId: userNode.id,
+      role: "assistant",
+      content: "",
+      events: [],
+      status: "streaming",
+      createdAt: now + 1,
+    };
+
+    // Build the request from the tree *before* the state update lands.
+    const parentPath = pathTo(scenario, parentId);
+    const request: ChatRequest = {
+      messages: toApiMessages([...parentPath, userNode]),
+      scenario: {
+        title: scenario.grounded ? scenario.title : undefined,
+        divergence: scenario.grounded ? scenario.divergence : undefined,
+        divergenceYear: scenario.grounded ? scenario.divergenceYear : null,
+        sourceTitles: scenario.sourceTitles,
+      },
+    };
+
+    updateScenario(scenarioId, (s) => ({
+      ...s,
+      nodes: { ...s.nodes, [userNode.id]: userNode, [assistantNode.id]: assistantNode },
+      leafId: assistantNode.id,
+      updatedAt: now,
+    }));
+    setStreaming({ scenarioId, nodeId: assistantNode.id });
+    setStatus("Preparing...");
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let content = "";
+    let finished = false;
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages }),
+        body: JSON.stringify(request),
+        signal: controller.signal,
       });
-
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error || `Request failed (${res.status})`);
@@ -43,111 +179,255 @@ export default function ChatClient() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let assistantText = "";
+      let pendingDelta = "";
+      let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-      while (true) {
+      const flush = () => {
+        if (!pendingDelta) return;
+        content += pendingDelta;
+        pendingDelta = "";
+        const snapshot = content;
+        updateNode(scenarioId, assistantNode.id, (n) => ({ ...n, content: snapshot }));
+      };
+
+      const handle = (ev: StreamEvent) => {
+        switch (ev.type) {
+          case "status":
+            setStatus(ev.text);
+            break;
+          case "meta":
+            updateScenario(scenarioId, (s) =>
+              s.grounded
+                ? s
+                : {
+                    ...s,
+                    grounded: true,
+                    title: ev.title || s.title,
+                    divergence: ev.divergence,
+                    divergenceYear: ev.divergenceYear,
+                  }
+            );
+            break;
+          case "sources":
+            updateScenario(scenarioId, (s) => ({
+              ...s,
+              sources: ev.sources,
+              sourceTitles: ev.sources.map((x) => x.title),
+              nodes: {
+                ...s.nodes,
+                [assistantNode.id]: { ...s.nodes[assistantNode.id], sources: ev.sources },
+              },
+            }));
+            break;
+          case "delta":
+            pendingDelta += ev.text;
+            if (!flushTimer) {
+              flushTimer = setTimeout(() => {
+                flushTimer = null;
+                flush();
+              }, 40);
+            }
+            break;
+          case "events":
+            flush();
+            updateNode(scenarioId, assistantNode.id, (n) => ({ ...n, events: ev.events }));
+            break;
+          case "error":
+            flush();
+            updateNode(scenarioId, assistantNode.id, (n) => ({ ...n, status: "error", error: ev.message }));
+            finished = true;
+            break;
+          case "done":
+            flush();
+            finished = true;
+            break;
+        }
+      };
+
+      for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-
         for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine.startsWith("data:")) continue;
-          const payload = trimmedLine.slice(5).trim();
-          if (payload === "[DONE]") continue;
-
+          const t = line.trim();
+          if (!t.startsWith("data:")) continue;
           try {
-            const parsed = JSON.parse(payload);
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) {
-              assistantText += delta;
-              setMessages((prev) => {
-                const copy = [...prev];
-                copy[copy.length - 1] = { role: "assistant", content: assistantText };
-                return copy;
-              });
-            }
+            handle(JSON.parse(t.slice(5)) as StreamEvent);
           } catch {
-            // Ignore malformed/partial SSE chunks.
+            // ignore malformed line
           }
         }
-        bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+      if (flushTimer) clearTimeout(flushTimer);
+      flush();
+      if (!finished) {
+        updateNode(scenarioId, assistantNode.id, (n) => ({
+          ...n,
+          status: "error",
+          error: "The stream ended unexpectedly.",
+        }));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      const aborted = controller.signal.aborted;
+      updateNode(scenarioId, assistantNode.id, (n) => ({
+        ...n,
+        content: n.content || content,
+        status: aborted ? "stopped" : "error",
+        error: aborted ? undefined : err instanceof Error ? err.message : "Something went wrong.",
+      }));
     } finally {
-      setIsStreaming(false);
+      // Clear the streaming flag; keep 'stopped'/'error' markers, drop 'streaming'.
+      updateNode(scenarioId, assistantNode.id, (n) =>
+        n.status === "streaming" ? { ...n, status: undefined } : n
+      );
+      setStreaming(null);
+      setStatus(null);
+      abortRef.current = null;
     }
   }
 
-  return (
-    <div className="flex flex-col w-full max-w-2xl h-[80vh] mx-auto">
-      <div className="flex-1 overflow-y-auto space-y-4 pb-4">
-        {messages.length === 0 && (
-          <div className="space-y-3">
-            <p className="text-zinc-500 dark:text-zinc-400 text-sm">
-              Propose a divergence from real history and see where it leads. Try one:
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {STARTERS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => send(s)}
-                  className="text-sm rounded-full border border-black/10 dark:border-white/15 px-3 py-1.5 hover:bg-black/[.04] dark:hover:bg-white/[.06] transition-colors"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+  // ----- render -----
+  const streamingNodeId = streaming && streaming.scenarioId === active?.id ? streaming.nodeId : null;
+  const branchTotal = active ? leaves(active).length : 0;
 
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`rounded-2xl px-4 py-3 whitespace-pre-wrap leading-relaxed ${
-              m.role === "user"
-                ? "bg-black text-white dark:bg-white dark:text-black ml-auto max-w-[80%]"
-                : "bg-black/[.04] dark:bg-white/[.06] mr-auto max-w-[85%]"
+  const panel = active ? (
+    <div className="flex h-full flex-col">
+      <div className="flex border-b border-black/10 dark:border-white/10 text-xs">
+        {(["timeline", "sources", "compare"] as PanelTab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 py-2.5 capitalize border-b-2 -mb-px transition-colors ${
+              tab === t
+                ? "border-black dark:border-white font-medium"
+                : "border-transparent text-zinc-500 hover:text-black dark:hover:text-white"
             }`}
           >
-            {m.content || (isStreaming && i === messages.length - 1 ? "…" : "")}
-          </div>
+            {t}
+            {t === "timeline" && pathEvents.length > 0 && (
+              <span className="ml-1 text-zinc-400">{pathEvents.length}</span>
+            )}
+            {t === "sources" && active.sources.length > 0 && (
+              <span className="ml-1 text-zinc-400">{active.sources.length}</span>
+            )}
+            {t === "compare" && branchTotal > 1 && <span className="ml-1 text-zinc-400">{branchTotal}</span>}
+          </button>
         ))}
+      </div>
+      <div className="flex-1 overflow-y-auto p-4">
+        {tab === "timeline" && (
+          <Timeline events={pathEvents} sources={active.sources} divergenceYear={active.divergenceYear} />
+        )}
+        {tab === "sources" && <SourceList sources={active.sources} />}
+        {tab === "compare" && (
+          <Compare
+            scenario={active}
+            onShowBranch={(leafId) => {
+              setLeaf(active.id, leafId);
+              setDrawer(null);
+            }}
+          />
+        )}
+      </div>
+    </div>
+  ) : (
+    <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
+      Start a scenario to see its timeline and sources.
+    </div>
+  );
 
-        {error && (
-          <div className="text-sm text-red-600 dark:text-red-400 rounded-lg bg-red-500/10 px-3 py-2">
-            {error}
+  return (
+    <div className="flex h-dvh flex-col bg-zinc-50 dark:bg-zinc-950 text-black dark:text-zinc-50">
+      <header className="flex items-center gap-3 border-b border-black/10 dark:border-white/10 px-3 sm:px-4 h-12 shrink-0">
+        <button
+          onClick={() => setDrawer(drawer === "left" ? null : "left")}
+          className="lg:hidden rounded-md px-2 py-1 text-sm hover:bg-black/[.06] dark:hover:bg-white/[.08]"
+          aria-label="Scenarios"
+        >
+          ☰
+        </button>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2 min-w-0">
+            <span className="font-semibold tracking-tight shrink-0">Alt History Explorer</span>
+            {active && Object.keys(active.nodes).length > 0 && (
+              <span className="truncate text-sm text-zinc-500 dark:text-zinc-400">
+                / {scenarioDisplayTitle(active)}
+                {active.divergenceYear !== null && (
+                  <span className="ml-2 font-mono text-xs rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1.5 py-0.5">
+                    {active.divergenceYear < 0 ? `${-active.divergenceYear} BCE` : active.divergenceYear}
+                  </span>
+                )}
+              </span>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={() => setDrawer(drawer === "right" ? null : "right")}
+          className="lg:hidden rounded-md px-2 py-1 text-sm hover:bg-black/[.06] dark:hover:bg-white/[.08]"
+        >
+          Timeline
+        </button>
+      </header>
+
+      <div className="flex flex-1 min-h-0 relative">
+        <aside className="hidden lg:block w-64 shrink-0 border-r border-black/10 dark:border-white/10">
+          <Sidebar
+            scenarios={store.scenarios}
+            activeId={store.activeId}
+            onSelect={selectScenario}
+            onNew={() => {
+              createScenario();
+              setDrawer(null);
+            }}
+            onDelete={deleteScenario}
+          />
+        </aside>
+
+        <main className="flex-1 min-w-0 min-h-0">
+          <Thread
+            key={active?.id ?? "none"}
+            scenario={active}
+            path={path}
+            streamingNodeId={streamingNodeId}
+            status={status}
+            composeParentId={active?.leafId ?? null}
+            onSend={send}
+            onStop={stop}
+            onSwitchSibling={switchSibling}
+            onBranchHere={branchHere}
+            onResumeLatest={resumeLatest}
+          />
+        </main>
+
+        <aside className="hidden lg:block w-80 xl:w-96 shrink-0 border-l border-black/10 dark:border-white/10">
+          {panel}
+        </aside>
+
+        {drawer && (
+          <div className="lg:hidden absolute inset-0 z-20 flex">
+            {drawer === "right" && <div className="flex-1 bg-black/30" onClick={() => setDrawer(null)} />}
+            <div className="w-[85%] max-w-sm bg-zinc-50 dark:bg-zinc-950 shadow-xl overflow-hidden">
+              {drawer === "left" ? (
+                <Sidebar
+                  scenarios={store.scenarios}
+                  activeId={store.activeId}
+                  onSelect={selectScenario}
+                  onNew={() => {
+                    createScenario();
+                    setDrawer(null);
+                  }}
+                  onDelete={deleteScenario}
+                />
+              ) : (
+                panel
+              )}
+            </div>
+            {drawer === "left" && <div className="flex-1 bg-black/30" onClick={() => setDrawer(null)} />}
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          send(input);
-        }}
-        className="flex gap-2 border-t border-black/10 dark:border-white/15 pt-4"
-      >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="What if...?"
-          disabled={isStreaming}
-          className="flex-1 rounded-full border border-black/10 dark:border-white/15 bg-transparent px-4 py-2 text-sm outline-none focus:border-black/30 dark:focus:border-white/40 disabled:opacity-50"
-        />
-        <button
-          type="submit"
-          disabled={isStreaming || !input.trim()}
-          className="rounded-full bg-black text-white dark:bg-white dark:text-black px-4 py-2 text-sm font-medium disabled:opacity-40"
-        >
-          {isStreaming ? "…" : "Send"}
-        </button>
-      </form>
     </div>
   );
 }

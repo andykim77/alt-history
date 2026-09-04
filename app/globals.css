@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
+  --background: #fafafa;
   --foreground: #171717;
 }
 
@@ -14,13 +14,158 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #09090b;
     --foreground: #ededed;
   }
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  overflow: hidden;
+}
+
+/* ---- rendered markdown in assistant replies ---- */
+.md {
+  font-size: 0.925rem;
+  line-height: 1.65;
+}
+.md > * + * {
+  margin-top: 0.7em;
+}
+.md p {
+  margin: 0;
+}
+.md p + p {
+  margin-top: 0.7em;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 1em;
+}
+.md h1 {
+  font-size: 1.15em;
+}
+.md h2 {
+  font-size: 1.08em;
+}
+.md h3,
+.md h4 {
+  font-size: 1em;
+}
+.md ul,
+.md ol {
+  padding-left: 1.3em;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md li + li {
+  margin-top: 0.25em;
+}
+.md strong {
+  font-weight: 600;
+}
+.md em {
+  font-style: italic;
+}
+.md blockquote {
+  border-left: 3px solid rgb(0 0 0 / 0.15);
+  padding-left: 0.9em;
+  color: rgb(0 0 0 / 0.7);
+}
+.md code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.85em;
+  background: rgb(0 0 0 / 0.06);
+  padding: 0.1em 0.35em;
+  border-radius: 0.3em;
+}
+.md pre {
+  overflow-x: auto;
+  background: rgb(0 0 0 / 0.06);
+  padding: 0.75em 0.9em;
+  border-radius: 0.5em;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid rgb(0 0 0 / 0.1);
+}
+.md table {
+  border-collapse: collapse;
+  font-size: 0.9em;
+  display: block;
+  overflow-x: auto;
+}
+.md th,
+.md td {
+  border: 1px solid rgb(0 0 0 / 0.12);
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+.md a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* citation chips: [1], [2] ... */
+.cite,
+.md a.cite {
+  text-decoration: none;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.72em;
+  vertical-align: super;
+  line-height: 1;
+  padding: 0.05em 0.3em;
+  border-radius: 0.3em;
+  background: rgb(217 119 6 / 0.14);
+  color: rgb(180 83 9);
+}
+.cite:hover,
+.md a.cite:hover {
+  background: rgb(217 119 6 / 0.28);
+}
+
+@media (prefers-color-scheme: dark) {
+  .md blockquote {
+    border-left-color: rgb(255 255 255 / 0.2);
+    color: rgb(255 255 255 / 0.75);
+  }
+  .md code,
+  .md pre {
+    background: rgb(255 255 255 / 0.08);
+  }
+  .md hr {
+    border-top-color: rgb(255 255 255 / 0.12);
+  }
+  .md th,
+  .md td {
+    border-color: rgb(255 255 255 / 0.15);
+  }
+  .cite,
+  .md a.cite {
+    background: rgb(251 191 36 / 0.16);
+    color: rgb(252 211 77);
+  }
+  .cite:hover,
+  .md a.cite:hover {
+    background: rgb(251 191 36 / 0.3);
+  }
 }

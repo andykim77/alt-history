@@ -102,7 +102,7 @@ export type ChatRequest = {
 /** Server -> client SSE payloads (each is one `data:` line as JSON). */
 export type StreamEvent =
   | { type: "status"; text: string }
-  | { type: "meta"; title: string; divergence: string; divergenceYear: number | null }
+  | { type: "meta"; title: string; divergence: string; divergenceYear: number | null; engine?: string }
   | { type: "sources"; sources: Source[] }
   | { type: "delta"; text: string }
   | { type: "update"; update: WorldUpdate }

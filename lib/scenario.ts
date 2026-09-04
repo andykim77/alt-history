@@ -30,6 +30,8 @@ export type Scenario = {
   grounded: boolean;
   sourceTitles: string[];
   sources: Source[];
+  /** Label of the model/provider that last narrated this scenario. */
+  engine?: string;
   nodes: Record<string, MessageNode>;
   /** The node currently displayed at the bottom of the thread. */
   leafId: string | null;

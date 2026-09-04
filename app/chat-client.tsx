@@ -209,17 +209,18 @@ export default function ChatClient() {
             setStatus(ev.text);
             break;
           case "meta":
-            updateScenario(scenarioId, (s) =>
-              s.grounded
-                ? s
+            updateScenario(scenarioId, (s) => {
+              const withEngine = ev.engine ? { ...s, engine: ev.engine } : s;
+              return withEngine.grounded
+                ? withEngine
                 : {
-                    ...s,
+                    ...withEngine,
                     grounded: true,
                     title: ev.title || s.title,
                     divergence: ev.divergence,
                     divergenceYear: ev.divergenceYear,
-                  }
-            );
+                  };
+            });
             break;
           case "sources":
             updateScenario(scenarioId, (s) => ({
@@ -403,11 +404,19 @@ export default function ChatClient() {
             )}
           </div>
         </div>
+        {active?.engine && (
+          <span
+            className="hidden sm:inline font-mono text-[10px] text-zinc-400 dark:text-zinc-500 truncate max-w-[16rem]"
+            title="Model narrating this scenario"
+          >
+            {active.engine}
+          </span>
+        )}
         <button
           onClick={() => setDrawer(drawer === "right" ? null : "right")}
           className="lg:hidden rounded-md px-2 py-1 text-sm hover:bg-black/[.06] dark:hover:bg-white/[.08]"
         >
-          Timeline
+          Dossier
         </button>
       </header>
 

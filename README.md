@@ -23,8 +23,10 @@ What makes it more than a chat box:
   with the shared history separated from where they diverge.
 - **Local persistence.** Scenarios live in your browser's `localStorage`. No accounts.
 
-Built with Next.js (App Router), Tailwind, and [OpenRouter](https://openrouter.ai)'s
-free-tier models.
+Built with Next.js (App Router) and Tailwind. The narrator can run on either
+[OpenRouter](https://openrouter.ai) (free-tier models, streamed) or the K-Oracle LLM
+gateway (Claude, GPT, or Gemini via the `llm-kit-andrewKim` kit; replies arrive in one
+piece). Switch with `LLM_PROVIDER`.
 
 ## Setup
 
@@ -41,10 +43,21 @@ free-tier models.
    ```
 
    ```
+   LLM_PROVIDER=openrouter
    OPENROUTER_API_KEY=sk-or-v1-...
    OPENROUTER_MODEL=minimax/minimax-m3:free
    SITE_URL=http://localhost:3000
    ```
+
+   **Using the K-Oracle gateway instead.** Set `LLM_PROVIDER=koracle`. Credentials are
+   read in place from the kit folder (`LLM_KIT_DIR`, defaulting to the sibling
+   `llm-kit-andrewKim-secure_extracted/llm-kit-andrewKim`), or from
+   `KORACLE_CREDENTIALS_JSON` on hosts that do not have the folder. Pick the upstream
+   with `KORACLE_PROVIDER` (`anthropic` default, `openai`, `google`) and optionally
+   `KORACLE_MODEL`. The gateway allows 10 requests per minute and 200 per day, resetting
+   at midnight KST, and does not stream, so the reply appears all at once after 15 to
+   40 seconds. Its 20k-character cap on the system prompt is respected by trimming the
+   Wikipedia extracts (`SOURCE_BUDGET_CHARS` overrides the budget).
 
 3. **Install and run**
 
@@ -72,6 +85,9 @@ browser ──POST /api/chat──▶ route.ts
   validates it, and sends the parsed update (events, figures, powers, ledger,
   flashpoints) as its own SSE message. Earlier replies are sent back to the model with
   their update attached, so the dossier stays consistent across turns.
+- `lib/llm.ts` is the provider switch (`complete` and `stream`); `lib/openrouter.ts` and
+  `lib/koracle.ts` are the two backends. The K-Oracle backend flattens the transcript
+  into a single prompt and yields the reply as one chunk.
 - `lib/grounding.ts` decides what to look up; `lib/wikipedia.ts` talks to the MediaWiki API.
 - `lib/scenario.ts` is the client-side model: a tree of message nodes per scenario, so
   branching is just choosing a different parent. Persisted to `localStorage`.

@@ -1,6 +1,7 @@
 // Grounding: figure out what the divergence is and which real-history sources to pull.
 
-import { complete, extractJsonObject } from "./openrouter";
+import { complete } from "./llm";
+import { extractJsonObject } from "./openrouter";
 import { fetchExtracts, searchTitles, type WikiPage } from "./wikipedia";
 import type { ScenarioMeta } from "./types";
 
@@ -128,5 +129,20 @@ export async function groundTurn(
   }
 
   const pages = await fetchExtracts(titles);
-  return { title, divergence, divergenceYear, pages };
+  return { title, divergence, divergenceYear, pages: budgetExtracts(pages) };
+}
+
+/** Keep the total source text within the engine's prompt budget. */
+function budgetExtracts(pages: WikiPage[]): WikiPage[] {
+  if (pages.length === 0) return pages;
+  const total = sourceBudgetChars();
+  const per = Math.max(600, Math.floor(total / pages.length));
+  return pages.map((p) => (p.extract.length > per ? { ...p, extract: p.extract.slice(0, per).trimEnd() + "…" } : p));
+}
+
+function sourceBudgetChars(): number {
+  const env = Number(process.env.SOURCE_BUDGET_CHARS);
+  if (Number.isFinite(env) && env > 0) return env;
+  // The K-Oracle gateway rejects system prompts over 20k chars; leave room for the rules.
+  return process.env.LLM_PROVIDER === "koracle" ? 13000 : 18000;
 }

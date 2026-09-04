@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { groundTurn, type Grounding } from "@/lib/grounding";
-import { extractJsonObject, streamCompletion, type OpenRouterMessage } from "@/lib/openrouter";
+import { extractJsonObject } from "@/lib/openrouter";
+import { engineLabel, stream as llmStream, supportsStreaming, type LlmMessage } from "@/lib/llm";
 import {
   STATE_DELIMITER,
   emptyUpdate,
@@ -49,9 +50,9 @@ ${sourceBlock}
 
 RULES
 1. Real history before the divergence: verify it against the sources above and cite them inline as [1], [2], etc. If a source contradicts what you were about to say, follow the source. If a pre-divergence detail is not covered by any source, say so briefly ("the record is thin here") rather than inventing specifics.
-2. Everything after the divergence is speculation. Make it plausible, grounded in the real conditions the sources describe, and consistent with earlier turns and with the dossier you have already built. Never cite a source for a speculative event.
+2. Everything after the divergence is speculation. Make it plausible, grounded in the real conditions the sources describe, and consistent with earlier turns and with the dossier you have already built. Never cite a source for a speculative event. The divergence changes only what follows it: anyone who died, and anything that ended, before the point of divergence stays that way unless the divergence itself is what saved them.
 3. Think in terms of actors and interests: who gains, who loses, what each power wants and what it can afford. Let consequences follow from those pressures rather than from coincidence.
-4. Write vivid prose, 2 to 4 short paragraphs. Markdown is allowed (bold for key names, occasional lists). Finish with a single closing sentence in plain prose that invites the user to push the scenario further (no "Hook:" label, no heading).
+4. Write vivid prose, 2 to 4 short paragraphs. Markdown is allowed (bold for key names, occasional lists) but do not use headings. Finish with a single closing sentence in plain prose that invites the user to push the scenario further (no "Hook:" label, no heading).
 5. After the prose, on its own line, write exactly ${STATE_DELIMITER} and then ONE JSON object with this shape:
 ${STATE_SCHEMA}
 Guidance for the JSON:
@@ -265,40 +266,6 @@ class DelimiterSplitter {
   }
 }
 
-async function pumpUpstream(
-  body: ReadableStream<Uint8Array>,
-  onDelta: (text: string) => void,
-  onError: (msg: string) => void
-) {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      const t = line.trim();
-      if (!t.startsWith("data:")) continue;
-      const payload = t.slice(5).trim();
-      if (payload === "[DONE]") return;
-      try {
-        const parsed = JSON.parse(payload);
-        if (parsed.error) {
-          onError(parsed.error.message || JSON.stringify(parsed.error));
-          return;
-        }
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (typeof delta === "string" && delta) onDelta(delta);
-      } catch {
-        // Ignore malformed chunks.
-      }
-    }
-  }
-}
-
 // ---------- handler ----------
 
 export async function POST(req: NextRequest) {
@@ -329,6 +296,7 @@ export async function POST(req: NextRequest) {
           title: grounding.title,
           divergence: grounding.divergence,
           divergenceYear: grounding.divergenceYear,
+          engine: engineLabel(),
         });
         const sources: Source[] = grounding.pages.map((p, i) => ({
           n: i + 1,
@@ -337,9 +305,12 @@ export async function POST(req: NextRequest) {
           snippet: p.extract.slice(0, 240).replace(/\s+/g, " ").trim(),
         }));
         send({ type: "sources", sources });
-        send({ type: "status", text: "Narrating..." });
+        send({
+          type: "status",
+          text: supportsStreaming() ? "Narrating..." : "Narrating (the full reply arrives at once, 15 to 40 seconds)...",
+        });
 
-        const upstreamMessages: OpenRouterMessage[] = [
+        const upstreamMessages: LlmMessage[] = [
           { role: "system", content: buildSystemPrompt(grounding) },
           ...messages.map((m) => ({
             role: m.role,
@@ -347,19 +318,17 @@ export async function POST(req: NextRequest) {
           })),
         ];
 
-        const upstream = await streamCompletion(upstreamMessages, { signal: req.signal, maxTokens: 2600 });
         const splitter = new DelimiterSplitter(STATE_DELIMITER);
         let upstreamError: string | null = null;
-        await pumpUpstream(
-          upstream,
-          (delta) => {
+        try {
+          for await (const delta of llmStream(upstreamMessages, { signal: req.signal, maxTokens: 2600 })) {
             const prose = splitter.push(delta);
             if (prose) send({ type: "delta", text: prose });
-          },
-          (msg) => {
-            upstreamError = msg;
           }
-        );
+        } catch (err) {
+          if (req.signal.aborted) throw err;
+          upstreamError = err instanceof Error ? err.message : "The model call failed.";
+        }
         const rest = splitter.flush();
         if (rest) send({ type: "delta", text: rest });
         if (upstreamError) send({ type: "error", message: upstreamError });

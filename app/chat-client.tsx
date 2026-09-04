@@ -367,7 +367,12 @@ export default function ChatClient() {
       </div>
       <div className="flex-1 overflow-y-auto p-4">
         {tab === "timeline" && (
-          <Timeline events={pathEvents} sources={active.sources} divergenceYear={active.divergenceYear} />
+          <Timeline
+            events={pathEvents}
+            sources={active.sources}
+            divergenceYear={active.divergenceYear}
+            compact={drawer === "right"}
+          />
         )}
         {tab === "figures" && <Figures figures={world.figures} sources={active.sources} onRename={renameEntity} />}
         {tab === "powers" && <Powers powers={world.powers} onRename={renameEntity} />}
@@ -376,6 +381,7 @@ export default function ChatClient() {
         {tab === "compare" && (
           <Compare
             scenario={active}
+            compact={drawer === "right"}
             onShowBranch={(leafId) => {
               setLeaf(active.id, leafId);
               setDrawer(null);

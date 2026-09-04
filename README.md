@@ -97,6 +97,14 @@ Requests per turn against OpenRouter: two on a scenario's first message (groundi
 narration), one afterwards. Free-tier models have per-minute and per-day request limits;
 a 429 is surfaced in the chat as a rate-limit message.
 
+## Visual audit
+
+`npm run audit:ui` drives the installed Chrome headlessly over CDP (via `puppeteer-core`),
+seeds a fixed two-branch scenario into `localStorage`, and screenshots every dossier tab in
+light and dark at desktop, tablet, and mobile widths into `ui-audit/`. It makes no LLM
+calls. Run it with the dev server up; set `CHROME_PATH` if Chrome is not in the default
+location.
+
 ## Deploying
 
 Deploys like any Next.js app (e.g. [Vercel](https://vercel.com/new)). Set

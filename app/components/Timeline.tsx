@@ -26,7 +26,7 @@ export function EventRow({
     </a>
   );
   return (
-    <li className="relative pl-5">
+    <div className="relative pl-5">
       <span
         className={`absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-white dark:ring-zinc-950 ${TYPE_STYLE[ev.type].dot}`}
         aria-hidden
@@ -52,7 +52,7 @@ export function EventRow({
           </span>
         </div>
       )}
-    </li>
+    </div>
   );
 }
 
@@ -69,14 +69,28 @@ export function Legend() {
   );
 }
 
+/**
+ * Index of the event before which the "point of divergence" marker belongs:
+ * the first event typed as the divergence; failing that, the first non-history
+ * event dated on or after the divergence year. -1 when nothing qualifies.
+ */
+function divergenceIndex(sorted: TimelineEvent[], divergenceYear: number | null): number {
+  const typed = sorted.findIndex((e) => e.type === "divergence");
+  if (typed >= 0) return typed;
+  if (divergenceYear === null) return -1;
+  return sorted.findIndex((e) => e.type !== "history" && e.year >= divergenceYear);
+}
+
 export function Timeline({
   events,
   sources,
   divergenceYear,
+  compact = false,
 }: {
   events: TimelineEvent[];
   sources: Source[];
   divergenceYear: number | null;
+  compact?: boolean;
 }) {
   if (events.length === 0) {
     return (
@@ -86,29 +100,28 @@ export function Timeline({
     );
   }
   const sorted = sortEvents(events);
+  const marker = divergenceIndex(sorted, divergenceYear);
   return (
     <div className="space-y-3">
       <Legend />
       <ol className="relative space-y-3 border-l border-zinc-200 dark:border-zinc-800 ml-1 pl-3 py-1">
-        {sorted.map((ev, i) => {
-          const prev = sorted[i - 1];
-          const crossesDivergence =
-            divergenceYear !== null &&
-            ev.year >= divergenceYear &&
-            (prev === undefined || prev.year < divergenceYear);
-          return (
-            <div key={`${ev.year}-${ev.label}-${i}`}>
-              {crossesDivergence && (
-                <div className="-ml-[1.05rem] mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wide text-amber-600 dark:text-amber-400">
-                  <span className="h-px flex-1 bg-amber-400/60" />
+        {sorted.map((ev, i) => (
+          <li key={`${ev.year}-${ev.label}-${i}`} className="list-none">
+            {i === marker && (
+              <div
+                className="relative -ml-3 mb-3 flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-amber-600 dark:text-amber-400"
+                aria-label="Point of divergence"
+              >
+                <span className="h-px w-3 bg-amber-400/70" />
+                <span className="rounded-full border border-amber-400/50 bg-amber-500/10 px-2 py-0.5">
                   point of divergence
-                  <span className="h-px flex-1 bg-amber-400/60" />
-                </div>
-              )}
-              <EventRow ev={ev} sources={sources} />
-            </div>
-          );
-        })}
+                </span>
+                <span className="h-px flex-1 bg-amber-400/40" />
+              </div>
+            )}
+            <EventRow ev={ev} sources={sources} compact={compact} />
+          </li>
+        ))}
       </ol>
     </div>
   );

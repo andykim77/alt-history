@@ -43,3 +43,6 @@ next-env.d.ts
 
 # K-Oracle session token cache
 .session.json
+
+# screenshots from npm run audit:ui
+/ui-audit/

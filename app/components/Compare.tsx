@@ -28,21 +28,24 @@ function Column({
     <div className="min-w-0 flex-1">
       <button
         onClick={onSelect}
-        className={`w-full text-left text-xs font-medium mb-2 rounded-md px-2 py-1 border transition-colors ${
+        className={`w-full text-left text-xs mb-2 rounded-md px-2 py-1 border transition-colors ${
           active
-            ? "border-black/40 dark:border-white/40"
-            : "border-transparent hover:bg-black/[.04] dark:hover:bg-white/[.06]"
+            ? "border-black/30 dark:border-white/30 bg-black/[.04] dark:bg-white/[.06] font-medium"
+            : "border-transparent text-zinc-600 dark:text-zinc-300 hover:bg-black/[.04] dark:hover:bg-white/[.06]"
         }`}
-        title="Show this branch in the chat"
+        title={active ? "Currently shown in the chat" : "Show this branch in the chat"}
       >
         {title}
+        {active && <span className="ml-1 text-[10px] font-mono uppercase text-zinc-400">· shown</span>}
       </button>
       {events.length === 0 ? (
         <p className="text-xs text-zinc-500 dark:text-zinc-400 pl-2">No events yet on this branch.</p>
       ) : (
         <ol className="space-y-2.5 border-l border-zinc-200 dark:border-zinc-800 ml-1 pl-2.5 py-1">
           {events.map((ev, i) => (
-            <EventRow key={`${ev.year}-${i}`} ev={ev} sources={scenario.sources} compact />
+            <li key={`${ev.year}-${i}`} className="list-none">
+              <EventRow ev={ev} sources={scenario.sources} compact />
+            </li>
           ))}
         </ol>
       )}
@@ -53,9 +56,11 @@ function Column({
 export function Compare({
   scenario,
   onShowBranch,
+  compact = false,
 }: {
   scenario: Scenario;
   onShowBranch: (leafId: string) => void;
+  compact?: boolean;
 }) {
   const tips = useMemo(() => leaves(scenario), [scenario]);
   const [pickA, setA] = useState<string>("");
@@ -88,25 +93,30 @@ export function Compare({
   const onlyA = sortEvents(eventsOnPath(pathA.slice(common)));
   const onlyB = sortEvents(eventsOnPath(pathB.slice(common)));
 
-  const select = (value: string, set: (v: string) => void) => (
-    <select
-      value={value}
-      onChange={(e) => set(e.target.value)}
-      className="w-full text-xs rounded-md border border-black/10 dark:border-white/15 bg-transparent px-2 py-1"
-    >
-      {tips.map((t, i) => (
-        <option key={t.id} value={t.id}>
-          {i + 1}. {branchLabel(scenario, t.id)}
-        </option>
-      ))}
-    </select>
+  const select = (letter: string, value: string, set: (v: string) => void) => (
+    <label className="flex items-center gap-2 text-xs">
+      <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500 w-3">
+        {letter}
+      </span>
+      <select
+        value={value}
+        onChange={(e) => set(e.target.value)}
+        className="min-w-0 flex-1 rounded-md border border-black/10 dark:border-white/15 bg-transparent px-2 py-1"
+      >
+        {tips.map((t, i) => (
+          <option key={t.id} value={t.id}>
+            {i + 1}. {branchLabel(scenario, t.id)}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2">
-        {select(a, setA)}
-        {select(b, setB)}
+      <div className="space-y-1.5">
+        {select("A", a, setA)}
+        {select("B", b, setB)}
       </div>
       <Legend />
 
@@ -117,7 +127,9 @@ export function Compare({
           </h4>
           <ol className="space-y-2.5 border-l border-zinc-200 dark:border-zinc-800 ml-1 pl-3 py-1">
             {shared.map((ev, i) => (
-              <EventRow key={`${ev.year}-${i}`} ev={ev} sources={scenario.sources} />
+              <li key={`${ev.year}-${i}`} className="list-none">
+                <EventRow ev={ev} sources={scenario.sources} compact={compact} />
+              </li>
             ))}
           </ol>
         </section>

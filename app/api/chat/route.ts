@@ -52,7 +52,7 @@ RULES
 1. Real history before the divergence: verify it against the sources above and cite them inline as [1], [2], etc. If a source contradicts what you were about to say, follow the source. If a pre-divergence detail is not covered by any source, say so briefly ("the record is thin here") rather than inventing specifics.
 2. Everything after the divergence is speculation. Make it plausible, grounded in the real conditions the sources describe, and consistent with earlier turns and with the dossier you have already built. Never cite a source for a speculative event. The divergence changes only what follows it: anyone who died, and anything that ended, before the point of divergence stays that way unless the divergence itself is what saved them.
 3. Think in terms of actors and interests: who gains, who loses, what each power wants and what it can afford. Let consequences follow from those pressures rather than from coincidence.
-4. Write vivid prose, 2 to 4 short paragraphs. Markdown is allowed (bold for key names, occasional lists) but do not use headings. Finish with a single closing sentence in plain prose that invites the user to push the scenario further (no "Hook:" label, no heading).
+4. Write vivid prose, 2 to 4 short paragraphs and no more than about 350 words. Markdown is allowed (bold for key names, occasional lists) but do not use headings. Keep the JSON that follows compact; the prose and the JSON must both fit comfortably in one reply. Finish with a single closing sentence in plain prose that invites the user to push the scenario further (no "Hook:" label, no heading).
 5. After the prose, on its own line, write exactly ${STATE_DELIMITER} and then ONE JSON object with this shape:
 ${STATE_SCHEMA}
 Guidance for the JSON:
@@ -193,10 +193,48 @@ function sanitizeUpdate(raw: unknown, sourceCount: number): WorldUpdate {
 function parseUpdate(raw: string, sourceCount: number): WorldUpdate {
   const obj = extractJsonObject<Record<string, unknown>>(raw);
   if (obj) return sanitizeUpdate(obj, sourceCount);
+  // The object failed to parse (usually truncated by the token limit): salvage
+  // whichever top-level arrays are complete.
+  const salvaged: Record<string, unknown> = {};
+  for (const key of ["events", "figures", "powers", "ledger", "flashpoints"]) {
+    const arr = salvageArray(raw, key);
+    if (arr) salvaged[key] = arr;
+  }
+  if (Object.keys(salvaged).length > 0) return sanitizeUpdate(salvaged, sourceCount);
   // Tolerate a bare events array (older format).
-  const arrStart = raw.indexOf("[");
-  if (arrStart >= 0) return sanitizeUpdate({ events: safeArray(raw) }, sourceCount);
+  if (raw.indexOf("[") >= 0) return sanitizeUpdate({ events: safeArray(raw) }, sourceCount);
   return emptyUpdate();
+}
+
+/** Find `"key": [ ... ]` and return the array if its brackets balance and it parses. */
+function salvageArray(raw: string, key: string): unknown[] | null {
+  const m = new RegExp(`"${key}"\\s*:\\s*\\[`).exec(raw);
+  if (!m) return null;
+  const start = m.index + m[0].length - 1;
+  let depth = 0;
+  let inStr = false;
+  for (let i = start; i < raw.length; i++) {
+    const c = raw[i];
+    if (inStr) {
+      if (c === "\\") i++;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "[" || c === "{") depth++;
+    else if (c === "]" || c === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          const v = JSON.parse(raw.slice(start, i + 1));
+          return Array.isArray(v) ? v : null;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function safeArray(raw: string): unknown[] {
@@ -321,7 +359,7 @@ export async function POST(req: NextRequest) {
         const splitter = new DelimiterSplitter(STATE_DELIMITER);
         let upstreamError: string | null = null;
         try {
-          for await (const delta of llmStream(upstreamMessages, { signal: req.signal, maxTokens: 2600 })) {
+          for await (const delta of llmStream(upstreamMessages, { signal: req.signal, maxTokens: 4500 })) {
             const prose = splitter.push(delta);
             if (prose) send({ type: "delta", text: prose });
           }

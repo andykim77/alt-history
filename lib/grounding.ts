@@ -44,7 +44,7 @@ async function analyzeDivergence(prompt: string): Promise<GroundingJson> {
       { role: "system", content: ANALYSIS_SYSTEM },
       { role: "user", content: analysisPrompt(prompt) },
     ],
-    { maxTokens: 700, temperature: 0.1 }
+    { maxTokens: 1200, temperature: 0.1 }
   );
   return extractJsonObject<GroundingJson>(text) ?? salvageAnalysis(text);
 }

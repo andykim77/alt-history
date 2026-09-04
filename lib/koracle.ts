@@ -39,7 +39,11 @@ const SESSION_FILE = resolve(process.cwd(), ".session.json");
 
 type GatewayResponse = {
   status: number;
-  json: { success?: boolean; data?: { text?: string; model?: string }; error?: string } | null;
+  json: {
+    success?: boolean;
+    data?: { text?: string; model?: string; usage?: Record<string, unknown>; stop_reason?: string };
+    error?: string;
+  } | null;
   raw: string;
   retryAfter: string | null;
 };
@@ -150,5 +154,10 @@ export async function koracleComplete(req: KoracleRequest): Promise<{ text: stri
     const detail = r.json?.error ?? (/^\s*</.test(r.raw) ? "HTML error page (upstream provider unavailable)" : r.raw.slice(0, 160));
     throw new KoracleError(`K-Oracle gateway error ${r.status}: ${detail}`, r.status);
   }
-  return { text: r.json.data?.text ?? "", model: r.json.data?.model ?? body.model ?? body.provider ?? "unknown" };
+  const text = r.json.data?.text ?? "";
+  const usage = r.json.data?.usage ?? {};
+  console.info(
+    `[koracle] ${r.json.data?.model ?? body.model ?? body.provider} out=${usage.output_tokens ?? "?"} in=${usage.input_tokens ?? "?"} max=${body.max_tokens ?? "-"} chars=${text.length}${r.json.data?.stop_reason ? ` stop=${r.json.data.stop_reason}` : ""}`
+  );
+  return { text, model: r.json.data?.model ?? body.model ?? body.provider ?? "unknown" };
 }

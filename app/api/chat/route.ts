@@ -380,7 +380,7 @@ export async function POST(req: NextRequest) {
         const splitter = new DelimiterSplitter(STATE_DELIMITER);
         let upstreamError: string | null = null;
         try {
-          for await (const delta of llmStream(upstreamMessages, { signal: req.signal, maxTokens: 4500 })) {
+          for await (const delta of llmStream(upstreamMessages, { signal: req.signal, maxTokens: 8000 })) {
             const prose = splitter.push(delta);
             if (prose) send({ type: "delta", text: prose });
           }

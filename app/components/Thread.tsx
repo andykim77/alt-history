@@ -20,6 +20,8 @@ type Props = {
   status: string | null;
   /** Node the next message will attach to (null = start of scenario). */
   composeParentId: string | null;
+  /** Open tensions from the latest reply on this branch. */
+  flashpoints: string[];
   onSend: (text: string, parentId: string | null) => void;
   onStop: () => void;
   onSwitchSibling: (nodeId: string) => void;
@@ -70,6 +72,7 @@ export function Thread({
   streamingNodeId,
   status,
   composeParentId,
+  flashpoints,
   onSend,
   onStop,
   onSwitchSibling,
@@ -123,14 +126,32 @@ export function Thread({
       <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-6">
         <div className="mx-auto max-w-2xl space-y-5">
           {empty && (
-            <div className="space-y-4 pt-8">
-              <h2 className="text-lg font-medium">Pick a moment in history. Change it.</h2>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                The narrator checks the real history leading up to your divergence against
-                Wikipedia, cites it, and then speculates forward. Every reply adds dated events
-                to a timeline, and you can branch the story at any point to compare outcomes.
-              </p>
-              <div className="flex flex-wrap gap-2">
+            <div className="space-y-5 pt-6">
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                  New scenario
+                </div>
+                <h2 className="font-serif text-2xl leading-tight mt-1">
+                  Pick a moment in history. Change it. Watch the world reorganise.
+                </h2>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-2 text-[13px]">
+                {[
+                  ["Sourced", "Real history up to the divergence is checked against Wikipedia and cited."],
+                  ["Timeline", "Every reply adds dated events, real and alternate, to a running timeline."],
+                  ["Figures & powers", "Key people and states are tracked: interests, strength, posture, fates."],
+                  ["Branches", "Fork at any reply, then compare how two branches diverge."],
+                ].map(([k, v]) => (
+                  <div key={k} className="rounded-xl border border-black/10 dark:border-white/10 px-3 py-2.5">
+                    <div className="font-medium">{k}</div>
+                    <div className="text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">{v}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                Or start from one of these
+              </div>
+              <div className="flex flex-wrap gap-2 -mt-3">
                 {STARTERS.map((s) => (
                   <button
                     key={s}
@@ -207,12 +228,33 @@ export function Thread({
                     {m.events.length > 0 && (
                       <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
                         +{m.events.length} timeline event{m.events.length === 1 ? "" : "s"}
+                        {m.update && m.update.figures.length > 0 && `, ${m.update.figures.length} figures`}
+                        {m.update && m.update.powers.length > 0 && `, ${m.update.powers.length} powers`}
                       </span>
                     )}
                   </div>
                 </div>
               );
             })}
+
+          {!isStreaming && !isEditing && !forkingMidThread && flashpoints.length > 0 && path.length > 0 && (
+            <div className="pt-1">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-2">
+                Flashpoints
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {flashpoints.map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => onSend(f, effectiveParent)}
+                    className="text-left text-[13px] rounded-xl border border-amber-500/30 bg-amber-500/[.06] hover:bg-amber-500/[.12] px-3 py-2 transition-colors"
+                  >
+                    <span className="text-amber-600 dark:text-amber-400">›</span> {f}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div ref={bottomRef} />
         </div>
       </div>

@@ -1,13 +1,18 @@
 import { NextRequest } from "next/server";
 import { groundTurn, type Grounding } from "@/lib/grounding";
-import { extractJsonArray, streamCompletion, type OpenRouterMessage } from "@/lib/openrouter";
+import { extractJsonObject, streamCompletion, type OpenRouterMessage } from "@/lib/openrouter";
 import {
-  TIMELINE_DELIMITER,
+  STATE_DELIMITER,
+  emptyUpdate,
   type ApiMessage,
   type ChatRequest,
+  type Figure,
+  type LedgerEntry,
+  type Power,
   type Source,
   type StreamEvent,
   type TimelineEvent,
+  type WorldUpdate,
 } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -20,13 +25,21 @@ function yearLabel(y: number | null): string {
   return y < 0 ? `${-y} BCE` : `${y} CE`;
 }
 
+const STATE_SCHEMA = `{
+  "events": [ {"year": <int, negative for BCE>, "label": "<max 80 chars>", "type": "history"|"divergence"|"alt", "source": <citation number or null>} ],
+  "figures": [ {"name": "...", "role": "<title or function>", "faction": "<power they serve>", "status": "rising"|"stable"|"declining"|"dead"|"unknown", "realFate": "<what happened to them in real history, one sentence>", "altFate": "<what is happening to them here, one sentence>", "source": <citation number or null>} ],
+  "powers": [ {"name": "...", "kind": "<empire|kingdom|republic|church|league|dynasty|company|movement>", "strength": <1-5>, "posture": "expanding"|"consolidating"|"defensive"|"fracturing"|"collapsing"|"emerging", "interests": ["<strategic interest: what they want and why, max 90 chars>", ...], "relations": [ {"with": "<other power name>", "kind": "ally"|"rival"|"war"|"vassal"|"trade"|"neutral"} ]} ],
+  "ledger": [ {"year": <int>, "ours": "<what happened in real history, max 100 chars>", "theirs": "<what happens in this timeline instead, max 100 chars>", "source": <citation number or null>} ],
+  "flashpoints": ["<an open tension or decision point the user could explore next, phrased as a question, max 90 chars>", "...", "..."]
+}`;
+
 function buildSystemPrompt(g: Grounding): string {
   const sourceBlock =
     g.pages.length === 0
       ? "(No sources could be retrieved for this turn. Be explicit about uncertainty for pre-divergence claims.)"
       : g.pages.map((p, i) => `[${i + 1}] ${p.title} — ${p.url}\n${p.extract}`).join("\n\n");
 
-  return `You are the narrator of an interactive alternate-history exploration.
+  return `You are the narrator and archivist of an interactive alternate-history exploration. Besides narrating, you maintain a structured dossier of the world: its timeline, key figures, powers and their strategic interests, and a ledger of what changed versus real history.
 
 SCENARIO: ${g.title}
 POINT OF DIVERGENCE: ${g.divergence} (${yearLabel(g.divergenceYear)})
@@ -36,14 +49,27 @@ ${sourceBlock}
 
 RULES
 1. Real history before the divergence: verify it against the sources above and cite them inline as [1], [2], etc. If a source contradicts what you were about to say, follow the source. If a pre-divergence detail is not covered by any source, say so briefly ("the record is thin here") rather than inventing specifics.
-2. Everything after the divergence is speculation. Make it plausible, grounded in the real conditions the sources describe, and consistent with earlier turns. Never cite a source for a speculative event.
-3. Write vivid prose, 2 to 4 short paragraphs. Markdown is allowed (bold for key names, occasional lists). Finish with a single closing sentence or question that invites the user to push the scenario further, written as plain prose (no "Hook:" label, no heading).
-4. After the prose, on its own line, write exactly ${TIMELINE_DELIMITER} and then a JSON array of 3 to 6 NEW dated events introduced in this reply. Do not repeat events already on the timeline. Each item: {"year": <integer, negative for BCE>, "label": "<max 80 chars>", "type": "history" | "divergence" | "alt", "source": <citation number or null>}. Use "history" for real pre-divergence events (with a source), "divergence" for the change itself (once, in the first reply), and "alt" for speculative consequences. Output nothing after the JSON.`;
+2. Everything after the divergence is speculation. Make it plausible, grounded in the real conditions the sources describe, and consistent with earlier turns and with the dossier you have already built. Never cite a source for a speculative event.
+3. Think in terms of actors and interests: who gains, who loses, what each power wants and what it can afford. Let consequences follow from those pressures rather than from coincidence.
+4. Write vivid prose, 2 to 4 short paragraphs. Markdown is allowed (bold for key names, occasional lists). Finish with a single closing sentence in plain prose that invites the user to push the scenario further (no "Hook:" label, no heading).
+5. After the prose, on its own line, write exactly ${STATE_DELIMITER} and then ONE JSON object with this shape:
+${STATE_SCHEMA}
+Guidance for the JSON:
+- events: 3 to 6 NEW dated events introduced in this reply; never repeat events already on the timeline. Use "history" for real pre-divergence events (with a source), "divergence" for the change itself (once, in the first reply), and "alt" for speculative consequences.
+- figures: 2 to 4 people who matter in this reply. Re-list a figure only if their status or altFate changed; a re-listed figure replaces the earlier entry. realFate must match the sources when covered.
+- powers: 2 to 4 powers active in this reply; each entry is that power's CURRENT full state (2 to 4 interests, relations to other named powers) and replaces any earlier entry for the same name.
+- ledger: 1 to 3 rows contrasting real history with this timeline at specific years.
+- flashpoints: exactly 3 open tensions the user could explore next.
+Output nothing after the JSON.`;
 }
 
 function serializeAssistant(m: ApiMessage): string {
-  if (!m.events || m.events.length === 0) return m.content;
-  return `${m.content}\n\n${TIMELINE_DELIMITER}\n${JSON.stringify(m.events)}`;
+  const u = m.update;
+  if (!u) return m.content;
+  const hasContent =
+    u.events.length || u.figures.length || u.powers.length || u.ledger.length || u.flashpoints.length;
+  if (!hasContent) return m.content;
+  return `${m.content}\n\n${STATE_DELIMITER}\n${JSON.stringify(u)}`;
 }
 
 function sanitizeMessages(raw: unknown): ApiMessage[] | null {
@@ -51,26 +77,137 @@ function sanitizeMessages(raw: unknown): ApiMessage[] | null {
   const out: ApiMessage[] = [];
   for (const m of raw) {
     if (!m || (m.role !== "user" && m.role !== "assistant") || typeof m.content !== "string") return null;
-    const events = Array.isArray(m.events) ? (m.events as TimelineEvent[]).slice(0, 40) : undefined;
-    out.push({ role: m.role, content: m.content.slice(0, 8000), events });
+    const update = m.update && typeof m.update === "object" ? sanitizeUpdate(m.update, 99) : undefined;
+    out.push({ role: m.role, content: m.content.slice(0, 8000), update });
   }
   if (out[out.length - 1].role !== "user") return null;
   return out.slice(-24);
 }
 
-function parseEvents(raw: string, sourceCount: number): TimelineEvent[] {
-  const arr = extractJsonArray<Record<string, unknown>>(raw) ?? [];
-  const out: TimelineEvent[] = [];
-  for (const e of arr) {
-    if (!e || typeof e !== "object") continue;
-    const year = typeof e.year === "number" ? Math.trunc(e.year) : parseInt(String(e.year), 10);
-    const label = typeof e.label === "string" ? e.label.trim().slice(0, 120) : "";
-    if (!Number.isFinite(year) || !label) continue;
-    const type = e.type === "history" || e.type === "divergence" || e.type === "alt" ? e.type : "alt";
-    const src = typeof e.source === "number" && e.source >= 1 && e.source <= sourceCount ? e.source : null;
-    out.push({ year, label, type, source: type === "alt" ? null : src });
+// ---------- structured output parsing ----------
+
+const asStr = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+const asInt = (v: unknown) => {
+  const n = typeof v === "number" ? Math.trunc(v) : parseInt(String(v), 10);
+  return Number.isFinite(n) ? n : null;
+};
+const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
+  typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
+
+function citation(v: unknown, sourceCount: number): number | null {
+  const n = asInt(v);
+  return n !== null && n >= 1 && n <= sourceCount ? n : null;
+}
+
+function sanitizeUpdate(raw: unknown, sourceCount: number): WorldUpdate {
+  const u = emptyUpdate();
+  if (!raw || typeof raw !== "object") return u;
+  const r = raw as Record<string, unknown>;
+
+  if (Array.isArray(r.events)) {
+    for (const e of r.events as Record<string, unknown>[]) {
+      if (!e || typeof e !== "object") continue;
+      const year = asInt(e.year);
+      const label = asStr(e.label, 120);
+      if (year === null || !label) continue;
+      const type = oneOf(e.type, ["history", "divergence", "alt"] as const, "alt");
+      const ev: TimelineEvent = { year, label, type, source: type === "alt" ? null : citation(e.source, sourceCount) };
+      u.events.push(ev);
+    }
+    u.events = u.events.slice(0, 8);
   }
-  return out.slice(0, 8);
+
+  if (Array.isArray(r.figures)) {
+    for (const f of r.figures as Record<string, unknown>[]) {
+      if (!f || typeof f !== "object") continue;
+      const name = asStr(f.name, 80);
+      if (!name) continue;
+      const fig: Figure = {
+        name,
+        role: asStr(f.role, 100),
+        faction: asStr(f.faction, 80),
+        status: oneOf(f.status, ["rising", "stable", "declining", "dead", "unknown"] as const, "unknown"),
+        realFate: asStr(f.realFate, 240),
+        altFate: asStr(f.altFate, 240),
+        source: citation(f.source, sourceCount),
+      };
+      u.figures.push(fig);
+    }
+    u.figures = u.figures.slice(0, 6);
+  }
+
+  if (Array.isArray(r.powers)) {
+    for (const p of r.powers as Record<string, unknown>[]) {
+      if (!p || typeof p !== "object") continue;
+      const name = asStr(p.name, 80);
+      if (!name) continue;
+      const strengthRaw = asInt(p.strength) ?? 3;
+      const relationsRaw = Array.isArray(p.relations) ? (p.relations as Record<string, unknown>[]) : [];
+      const pow: Power = {
+        name,
+        kind: asStr(p.kind, 40),
+        strength: Math.min(5, Math.max(1, strengthRaw)),
+        posture: oneOf(
+          p.posture,
+          ["expanding", "consolidating", "defensive", "fracturing", "collapsing", "emerging"] as const,
+          "consolidating"
+        ),
+        interests: (Array.isArray(p.interests) ? p.interests : [])
+          .map((s) => asStr(s, 140))
+          .filter(Boolean)
+          .slice(0, 5),
+        relations: relationsRaw
+          .filter((x) => x && typeof x === "object")
+          .map((x) => ({
+            with: asStr(x.with, 80),
+            kind: oneOf(x.kind, ["ally", "rival", "war", "vassal", "trade", "neutral"] as const, "neutral"),
+          }))
+          .filter((x) => x.with)
+          .slice(0, 6),
+      };
+      u.powers.push(pow);
+    }
+    u.powers = u.powers.slice(0, 6);
+  }
+
+  if (Array.isArray(r.ledger)) {
+    for (const l of r.ledger as Record<string, unknown>[]) {
+      if (!l || typeof l !== "object") continue;
+      const year = asInt(l.year);
+      const ours = asStr(l.ours, 160);
+      const theirs = asStr(l.theirs, 160);
+      if (year === null || !ours || !theirs) continue;
+      const row: LedgerEntry = { year, ours, theirs, source: citation(l.source, sourceCount) };
+      u.ledger.push(row);
+    }
+    u.ledger = u.ledger.slice(0, 5);
+  }
+
+  if (Array.isArray(r.flashpoints)) {
+    u.flashpoints = (r.flashpoints as unknown[]).map((s) => asStr(s, 140)).filter(Boolean).slice(0, 3);
+  }
+  return u;
+}
+
+function parseUpdate(raw: string, sourceCount: number): WorldUpdate {
+  const obj = extractJsonObject<Record<string, unknown>>(raw);
+  if (obj) return sanitizeUpdate(obj, sourceCount);
+  // Tolerate a bare events array (older format).
+  const arrStart = raw.indexOf("[");
+  if (arrStart >= 0) return sanitizeUpdate({ events: safeArray(raw) }, sourceCount);
+  return emptyUpdate();
+}
+
+function safeArray(raw: string): unknown[] {
+  const s = raw.indexOf("[");
+  const e = raw.lastIndexOf("]");
+  if (s < 0 || e <= s) return [];
+  try {
+    const v = JSON.parse(raw.slice(s, e + 1));
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
 }
 
 // ---------- SSE plumbing ----------
@@ -80,8 +217,8 @@ const sse = (ev: StreamEvent) => encoder.encode(`data: ${JSON.stringify(ev)}\n\n
 
 /**
  * Forwards prose deltas while holding back any suffix that could be the start of
- * the timeline delimiter. Once the delimiter is seen, everything after it is
- * collected as the timeline payload instead of forwarded.
+ * the state delimiter. Once the delimiter is seen, everything after it is
+ * collected as the structured payload instead of forwarded.
  */
 class DelimiterSplitter {
   private pending = "";
@@ -104,7 +241,6 @@ class DelimiterSplitter {
       this.collecting = true;
       return prose;
     }
-    // Hold back the longest suffix of pending that is a prefix of the delimiter.
     let hold = 0;
     const max = Math.min(this.delimiter.length - 1, this.pending.length);
     for (let k = max; k > 0; k--) {
@@ -118,14 +254,13 @@ class DelimiterSplitter {
     return emit;
   }
 
-  /** Flush at end of stream. Returns any prose still held back. */
   flush(): string {
     const rest = this.collecting ? "" : this.pending;
     this.pending = "";
     return rest;
   }
 
-  get timelineRaw(): string {
+  get structuredRaw(): string {
     return this.tail;
   }
 }
@@ -212,8 +347,8 @@ export async function POST(req: NextRequest) {
           })),
         ];
 
-        const upstream = await streamCompletion(upstreamMessages, { signal: req.signal });
-        const splitter = new DelimiterSplitter(TIMELINE_DELIMITER);
+        const upstream = await streamCompletion(upstreamMessages, { signal: req.signal, maxTokens: 2600 });
+        const splitter = new DelimiterSplitter(STATE_DELIMITER);
         let upstreamError: string | null = null;
         await pumpUpstream(
           upstream,
@@ -229,8 +364,9 @@ export async function POST(req: NextRequest) {
         if (rest) send({ type: "delta", text: rest });
         if (upstreamError) send({ type: "error", message: upstreamError });
 
-        const events = parseEvents(splitter.timelineRaw, sources.length);
-        send({ type: "events", events });
+        send({ type: "status", text: "Updating the dossier..." });
+        const update = parseUpdate(splitter.structuredRaw, sources.length);
+        send({ type: "update", update });
         send({ type: "done" });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Something went wrong.";

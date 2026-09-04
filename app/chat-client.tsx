@@ -13,6 +13,7 @@ import {
   scenarioDisplayTitle,
   toApiMessages,
   uid,
+  worldOnPath,
   type MessageNode,
   type Scenario,
   type Store,
@@ -22,8 +23,19 @@ import { Sidebar } from "./components/Sidebar";
 import { Thread } from "./components/Thread";
 import { SourceList, Timeline } from "./components/Timeline";
 import { Compare } from "./components/Compare";
+import { Figures } from "./components/Figures";
+import { Powers } from "./components/Powers";
+import { Ledger } from "./components/Ledger";
 
-type PanelTab = "timeline" | "sources" | "compare";
+type PanelTab = "timeline" | "figures" | "powers" | "changes" | "sources" | "compare";
+const TABS: { id: PanelTab; label: string }[] = [
+  { id: "timeline", label: "Timeline" },
+  { id: "figures", label: "Figures" },
+  { id: "powers", label: "Powers" },
+  { id: "changes", label: "Changes" },
+  { id: "sources", label: "Sources" },
+  { id: "compare", label: "Compare" },
+];
 type Drawer = "left" | "right" | null;
 
 export default function ChatClient() {
@@ -50,6 +62,7 @@ export default function ChatClient() {
   );
   const path = useMemo(() => (active ? pathTo(active, active.leafId) : []), [active]);
   const pathEvents = useMemo(() => eventsOnPath(path), [path]);
+  const world = useMemo(() => worldOnPath(path), [path]);
 
   const updateScenario = useCallback((id: string, fn: (s: Scenario) => Scenario) => {
     setStore((prev) => ({
@@ -228,9 +241,13 @@ export default function ChatClient() {
               }, 40);
             }
             break;
-          case "events":
+          case "update":
             flush();
-            updateNode(scenarioId, assistantNode.id, (n) => ({ ...n, events: ev.events }));
+            updateNode(scenarioId, assistantNode.id, (n) => ({
+              ...n,
+              update: ev.update,
+              events: ev.update.events,
+            }));
             break;
           case "error":
             flush();
@@ -292,34 +309,56 @@ export default function ChatClient() {
   const streamingNodeId = streaming && streaming.scenarioId === active?.id ? streaming.nodeId : null;
   const branchTotal = active ? leaves(active).length : 0;
 
+  const counts: Record<PanelTab, number> = {
+    timeline: pathEvents.length,
+    figures: world.figures.length,
+    powers: world.powers.length,
+    changes: world.ledger.length,
+    sources: active?.sources.length ?? 0,
+    compare: branchTotal > 1 ? branchTotal : 0,
+  };
+
   const panel = active ? (
     <div className="flex h-full flex-col">
-      <div className="flex border-b border-black/10 dark:border-white/10 text-xs">
-        {(["timeline", "sources", "compare"] as PanelTab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 py-2.5 capitalize border-b-2 -mb-px transition-colors ${
-              tab === t
-                ? "border-black dark:border-white font-medium"
-                : "border-transparent text-zinc-500 hover:text-black dark:hover:text-white"
-            }`}
-          >
-            {t}
-            {t === "timeline" && pathEvents.length > 0 && (
-              <span className="ml-1 text-zinc-400">{pathEvents.length}</span>
-            )}
-            {t === "sources" && active.sources.length > 0 && (
-              <span className="ml-1 text-zinc-400">{active.sources.length}</span>
-            )}
-            {t === "compare" && branchTotal > 1 && <span className="ml-1 text-zinc-400">{branchTotal}</span>}
-          </button>
-        ))}
+      <div className="px-3 pt-3 pb-2 border-b border-black/10 dark:border-white/10">
+        <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+          Dossier
+        </div>
+        {active.divergence ? (
+          <p className="font-serif text-[13.5px] leading-snug mt-0.5 text-zinc-700 dark:text-zinc-300 line-clamp-2">
+            {active.divergence}
+          </p>
+        ) : (
+          <p className="text-xs text-zinc-500 mt-0.5">The world state builds as you explore.</p>
+        )}
+        <div className="mt-2 flex flex-wrap gap-1">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`rounded-full px-2.5 py-1 text-[11.5px] border transition-colors ${
+                tab === t.id
+                  ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white"
+                  : "border-black/10 dark:border-white/15 text-zinc-600 dark:text-zinc-300 hover:bg-black/[.04] dark:hover:bg-white/[.06]"
+              }`}
+            >
+              {t.label}
+              {counts[t.id] > 0 && (
+                <span className={`ml-1 font-mono ${tab === t.id ? "opacity-70" : "text-zinc-400"}`}>
+                  {counts[t.id]}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4">
         {tab === "timeline" && (
           <Timeline events={pathEvents} sources={active.sources} divergenceYear={active.divergenceYear} />
         )}
+        {tab === "figures" && <Figures figures={world.figures} sources={active.sources} />}
+        {tab === "powers" && <Powers powers={world.powers} />}
+        {tab === "changes" && <Ledger ledger={world.ledger} sources={active.sources} />}
         {tab === "sources" && <SourceList sources={active.sources} />}
         {tab === "compare" && (
           <Compare
@@ -334,7 +373,8 @@ export default function ChatClient() {
     </div>
   ) : (
     <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
-      Start a scenario to see its timeline and sources.
+      Start a scenario and its dossier builds here: timeline, key figures, powers and
+      their interests, what changed, and the sources behind it.
     </div>
   );
 
@@ -350,7 +390,7 @@ export default function ChatClient() {
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2 min-w-0">
-            <span className="font-semibold tracking-tight shrink-0">Alt History Explorer</span>
+            <span className="font-serif font-medium text-[17px] tracking-tight shrink-0">Alt History Explorer</span>
             {active && Object.keys(active.nodes).length > 0 && (
               <span className="truncate text-sm text-zinc-500 dark:text-zinc-400">
                 / {scenarioDisplayTitle(active)}
@@ -393,6 +433,7 @@ export default function ChatClient() {
             streamingNodeId={streamingNodeId}
             status={status}
             composeParentId={active?.leafId ?? null}
+            flashpoints={world.flashpoints}
             onSend={send}
             onStop={stop}
             onSwitchSibling={switchSibling}
@@ -401,7 +442,7 @@ export default function ChatClient() {
           />
         </main>
 
-        <aside className="hidden lg:block w-80 xl:w-96 shrink-0 border-l border-black/10 dark:border-white/10">
+        <aside className="hidden lg:block w-[22rem] xl:w-[26rem] shrink-0 border-l border-black/10 dark:border-white/10 bg-zinc-100/60 dark:bg-zinc-900/40">
           {panel}
         </aside>
 

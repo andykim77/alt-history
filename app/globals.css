@@ -10,6 +10,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-newsreader), Georgia, "Times New Roman", serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -33,8 +34,9 @@ body {
 
 /* ---- rendered markdown in assistant replies ---- */
 .md {
-  font-size: 0.925rem;
-  line-height: 1.65;
+  font-family: var(--font-newsreader), Georgia, "Times New Roman", serif;
+  font-size: 1.05rem;
+  line-height: 1.6;
 }
 .md > * + * {
   margin-top: 0.7em;

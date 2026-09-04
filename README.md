@@ -9,8 +9,15 @@ What makes it more than a chat box:
   divergence and pulls the relevant Wikipedia articles. The narrator is instructed to
   verify everything *before* the divergence against those sources and cite them inline
   (`[1]`, `[2]`), and to treat everything *after* it as clearly-labelled speculation.
-- **A growing timeline.** Every reply also emits dated events (real, divergence, or
-  alternate), rendered as a timeline beside the chat.
+- **A living dossier, not just a transcript.** Every reply also emits structured
+  data that the app folds into the current state of the world:
+  - **Timeline**: dated events (real, divergence, or alternate).
+  - **Figures**: the people who matter, their status, and their fate in our world
+    versus this one.
+  - **Powers**: states, dynasties, and institutions with their strategic interests,
+    strength, posture, and relations to each other.
+  - **Changes**: a year-by-year ledger of "in our world" versus "in this world".
+  - **Flashpoints**: three open tensions after each reply, one click to explore.
 - **Branching.** Any reply can be forked ("Branch here") and any of your messages can be
   edited into a new branch. A compare view shows two branches' timelines side by side,
   with the shared history separated from where they diverge.
@@ -57,12 +64,14 @@ browser ──POST /api/chat──▶ route.ts
                               │  2. fetchExtracts()   pull article intros (one batched call)
                               │  3. streamCompletion  narrate with sources in the system prompt
                               ▼
-        SSE events: status → meta → sources → delta… → events → done
+        SSE events: status → meta → sources → delta… → update → done
 ```
 
 - `app/api/chat/route.ts` holds the API key, orchestrates grounding, and re-streams the
-  model output. It strips the machine-readable `---TIMELINE---` block from the prose and
-  sends the parsed events as their own SSE message.
+  model output. It strips the machine-readable `---WORLDSTATE---` block from the prose,
+  validates it, and sends the parsed update (events, figures, powers, ledger,
+  flashpoints) as its own SSE message. Earlier replies are sent back to the model with
+  their update attached, so the dossier stays consistent across turns.
 - `lib/grounding.ts` decides what to look up; `lib/wikipedia.ts` talks to the MediaWiki API.
 - `lib/scenario.ts` is the client-side model: a tree of message nodes per scenario, so
   branching is just choosing a different parent. Persisted to `localStorage`.

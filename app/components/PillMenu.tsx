@@ -16,6 +16,7 @@ export function PillMenu<T extends string>({
   overridden,
   title,
   onChange,
+  variant = "pill",
 }: {
   value: T;
   options: PillOption<T>[];
@@ -24,6 +25,8 @@ export function PillMenu<T extends string>({
   title: string;
   /** null = clear the user's choice. */
   onChange: (next: T | null) => void;
+  /** "pill" (default) renders a coloured status pill; "text" a plain inline label. */
+  variant?: "pill" | "text";
 }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
@@ -54,7 +57,11 @@ export function PillMenu<T extends string>({
         aria-haspopup="listbox"
         aria-expanded={open}
         title={`${title}${overridden ? ` · ${t.setByYou}` : ""}`}
-        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide cursor-pointer transition-shadow hover:shadow-[0_0_0_2px_rgba(0,0,0,0.12)] dark:hover:shadow-[0_0_0_2px_rgba(255,255,255,0.18)] ${current.cls}`}
+        className={
+          variant === "pill"
+            ? `inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide cursor-pointer transition-shadow hover:shadow-[0_0_0_2px_rgba(0,0,0,0.12)] dark:hover:shadow-[0_0_0_2px_rgba(255,255,255,0.18)] ${current.cls}`
+            : `inline-flex items-center gap-1 rounded px-1 -mx-1 cursor-pointer hover:bg-black/[.05] dark:hover:bg-white/[.08] ${current.cls}`
+        }
       >
         {current.label}
         {overridden && <span aria-hidden className="opacity-70">✎</span>}
@@ -82,9 +89,13 @@ export function PillMenu<T extends string>({
                 o.value === value ? "font-medium" : ""
               }`}
             >
-              <span className={`inline-block rounded-full px-1.5 py-px text-[9px] uppercase tracking-wide ${o.cls}`}>
-                {o.label}
-              </span>
+              {variant === "pill" ? (
+                <span className={`inline-block rounded-full px-1.5 py-px text-[9px] uppercase tracking-wide ${o.cls}`}>
+                  {o.label}
+                </span>
+              ) : (
+                <span className="truncate">{o.label}</span>
+              )}
               {o.value === value && <span className="ml-auto text-zinc-400 text-[10px]">●</span>}
             </button>
           ))}

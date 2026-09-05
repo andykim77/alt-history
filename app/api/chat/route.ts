@@ -60,10 +60,11 @@ const STATUS_TEXT: Record<Lang, { narrating: string; narratingSlow: string; doss
 type Overrides = NonNullable<ChatRequest["scenario"]["overrides"]>;
 
 function overrideBlock(o: Overrides | undefined): string {
-  if (!o || (o.powers.length === 0 && o.figures.length === 0)) return "";
+  if (!o || (o.powers.length === 0 && o.figures.length === 0 && !o.factions?.length)) return "";
   const lines = [
     ...o.powers.map((p) => `- power "${p.name}": posture "${p.posture}"`),
     ...o.figures.map((f) => `- figure "${f.name}": status "${f.status}"`),
+    ...(o.factions ?? []).map((f) => `- figure "${f.name}": faction "${f.faction || "none"}"`),
   ];
   return `\nSTATES SET BY THE USER — these are facts of this world now. Keep them in the JSON and let the narrative follow from them, unless the user's own message clearly changes them:\n${lines.join("\n")}\n`;
 }
@@ -108,7 +109,7 @@ RULES
 ${STATE_SCHEMA}
 Guidance for the JSON:
 - events: 4 to 6 NEW dated events introduced in this reply; never repeat events already on the timeline. EVERY event needs a full date, YYYY-MM-DD, never a bare year. Real events: the day recorded by the sources or well-established history; only if the record gives no day, fall back to YYYY-MM. Speculative events: you are writing this history, so commit to a specific, plausible day consistent with the narrative, the season (campaigns in summer, councils and coronations on feast days, sailings in spring), and the events around it; do not present it as documented. Use "history" for real pre-divergence events (with a source), "divergence" for the change itself (once, in the first reply), and "alt" for speculative consequences.
-- figures: 3 to 4 people who matter in this reply. Re-list a figure only if their status or altFate changed; a re-listed figure replaces the earlier entry. realFate must match the sources when covered. Status runs "dominant" (unchallenged in their sphere; rare), "rising", "stable", "declining", "wounded" (physically hurt, outcome open), "ill" (sick or failing in health), "dead", "unknown". faction is the power they serve, spelled exactly as that power's name in the powers list, so figures group under it.
+- figures: 3 to 4 people who matter in this reply. Re-list a figure only if their status or altFate changed; a re-listed figure replaces the earlier entry, so reuse EXACTLY the name string used before (no added titles, epithets, or "of X"); never create a second entry for a person already in the dossier. realFate must match the sources when covered. Status runs "dominant" (unchallenged in their sphere; rare), "rising", "stable", "declining", "wounded" (physically hurt, outcome open), "ill" (sick or failing in health), "dead", "unknown". faction is the power they serve, spelled exactly as that power's name in the powers list, so figures group under it.
 - powers: 3 to 4 powers active in this reply; each entry is that power's CURRENT full state (2 to 4 interests, relations to other named powers) and replaces any earlier entry for the same name. Posture runs from "hegemon" (unchallenged dominance over its world, rare: at most one power at a time) through expanding, emerging, consolidating, defensive, fracturing, collapsing, to "fallen" (the power has ceased to exist: conquered, partitioned, or dissolved). When a power falls, list it once more with posture "fallen", strength 1, and interests describing what its remnants or successors want; it then stays fallen unless the story explicitly restores it.
 - ledger: 2 to 3 rows contrasting real history with this timeline at specific years.
 - flashpoints: exactly 3 open tensions the user could explore next.
@@ -138,7 +139,11 @@ function sanitizeOverrides(raw: unknown): Overrides | undefined {
     .filter((f) => f && typeof f.name === "string" && (STATUSES as readonly string[]).includes(f.status))
     .map((f) => ({ name: String(f.name).slice(0, 80), status: f.status as (typeof STATUSES)[number] }))
     .slice(0, 40);
-  return powers.length || figures.length ? { powers, figures } : undefined;
+  const factions = (Array.isArray((r as { factions?: unknown }).factions) ? ((r as { factions: unknown[] }).factions as Record<string, unknown>[]) : [])
+    .filter((f) => f && typeof f.name === "string" && typeof f.faction === "string")
+    .map((f) => ({ name: String(f.name).slice(0, 80), faction: String(f.faction).slice(0, 80) }))
+    .slice(0, 40);
+  return powers.length || figures.length || factions.length ? { powers, figures, factions } : undefined;
 }
 
 function sanitizeMessages(raw: unknown): ApiMessage[] | null {

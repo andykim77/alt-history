@@ -120,6 +120,7 @@ export type ScenarioMeta = {
   overrides?: {
     powers: { name: string; posture: Posture }[];
     figures: { name: string; status: FigureStatus }[];
+    factions?: { name: string; faction: string }[];
   };
 };
 

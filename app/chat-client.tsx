@@ -89,7 +89,7 @@ export default function ChatClient() {
     }));
   }
   /** Set (or clear with null) a pill the user picked by hand. */
-  function setOverride(kind: "powers" | "figures", name: string, value: string | null) {
+  function setOverride(kind: "powers" | "figures" | "factions", name: string, value: string | null) {
     if (!active) return;
     updateScenario(active.id, (s) => {
       const map = { ...(s.overrides?.[kind] ?? {}) } as Record<string, string>;
@@ -426,9 +426,12 @@ export default function ChatClient() {
           <Figures
             figures={world.figures}
             sources={active.sources}
+            factions={world.powers.map((p) => p.name)}
             overrides={active.overrides?.figures}
+            factionOverrides={active.overrides?.factions}
             onRename={renameEntity}
             onSetStatus={(name, status) => setOverride("figures", name, status)}
+            onSetFaction={(name, faction) => setOverride("factions", name, faction)}
           />
         )}
         {tab === "powers" && (

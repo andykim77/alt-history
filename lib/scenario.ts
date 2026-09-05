@@ -18,10 +18,12 @@ import {
 /** User renames keyed by the normalised displayed name; chains are followed. */
 export type Renames = Record<string, string>;
 
-/** Pill values the user has set by hand, keyed by normalised (renamed) name. */
+/** Values the user has set by hand, keyed by normalised (renamed) name. */
 export type Overrides = {
   powers?: Record<string, Posture>;
   figures?: Record<string, FigureStatus>;
+  /** Figure key -> faction name ("" = unaffiliated). */
+  factions?: Record<string, string>;
 };
 
 export type NodeStatus = "streaming" | "stopped" | "error";
@@ -210,23 +212,37 @@ export function applyRenames(u: WorldUpdate, renames: Renames | undefined): Worl
   };
 }
 
-/** Apply the user's pill choices to an update (after renames). */
+/** Apply the user's hand-set values to an update (after renames). */
 export function applyOverrides(u: WorldUpdate, overrides: Overrides | undefined): WorldUpdate {
   const powers = overrides?.powers ?? {};
   const figures = overrides?.figures ?? {};
-  if (Object.keys(powers).length === 0 && Object.keys(figures).length === 0) return u;
+  const factions = overrides?.factions ?? {};
+  if (!Object.keys(powers).length && !Object.keys(figures).length && !Object.keys(factions).length) return u;
   return {
     ...u,
-    figures: u.figures.map((f) => (figures[norm(f.name)] ? { ...f, status: figures[norm(f.name)] } : f)),
+    figures: u.figures.map((f) => {
+      const key = norm(f.name);
+      const status = figures[key];
+      const faction = factions[key];
+      return {
+        ...f,
+        status: status ?? f.status,
+        faction: faction !== undefined ? faction : f.faction,
+      };
+    }),
     powers: u.powers.map((p) => (powers[norm(p.name)] ? { ...p, posture: powers[norm(p.name)] } : p)),
   };
 }
 
-/** The user's pill choices as lists for the server, with display names. */
+/** The user's hand-set values as lists for the server, with display names. */
 export function overridePairs(
   overrides: Overrides | undefined,
   world: WorldState
-): { powers: { name: string; posture: Posture }[]; figures: { name: string; status: FigureStatus }[] } {
+): {
+  powers: { name: string; posture: Posture }[];
+  figures: { name: string; status: FigureStatus }[];
+  factions: { name: string; faction: string }[];
+} {
   const powers = Object.entries(overrides?.powers ?? {}).flatMap(([key, posture]) => {
     const p = world.powers.find((x) => norm(x.name) === key);
     return p ? [{ name: p.name, posture }] : [];
@@ -235,7 +251,40 @@ export function overridePairs(
     const f = world.figures.find((x) => norm(x.name) === key);
     return f ? [{ name: f.name, status }] : [];
   });
-  return { powers, figures };
+  const factions = Object.entries(overrides?.factions ?? {}).flatMap(([key, faction]) => {
+    const f = world.figures.find((x) => norm(x.name) === key);
+    return f ? [{ name: f.name, faction }] : [];
+  });
+  return { powers, figures, factions };
+}
+
+// ---------- identity matching ----------
+
+const tokens = (s: string) => norm(s).split(" ").filter(Boolean);
+
+/**
+ * Whether two names refer to the same entity: equal after normalisation, or one
+ * is a whole-token run inside the other ("franz joseph i" in "emperor franz
+ * joseph i of austria"). The shorter must have at least two tokens so bare first
+ * names such as "Charles" never merge different people.
+ */
+export function sameEntity(a: string, b: string): boolean {
+  const ka = norm(a);
+  const kb = norm(b);
+  if (ka === kb) return true;
+  const [short, long] = ka.length <= kb.length ? [ka, kb] : [kb, ka];
+  if (tokens(short).length < 2) return false;
+  return (" " + long + " ").includes(" " + short + " ");
+}
+
+/** The power name a figure's faction refers to, if one matches; else the faction as given. */
+export function canonicalFaction(faction: string, powerNames: string[]): string {
+  if (!faction) return faction;
+  const exact = powerNames.find((p) => norm(p) === norm(faction));
+  if (exact) return exact;
+  // "Byzantine Empire (opposition)" -> "Byzantine Empire"; "Rome" -> "Roman Republic" is left alone.
+  const contained = powerNames.find((p) => tokens(p).length >= 2 && (" " + norm(faction) + " ").includes(" " + norm(p) + " "));
+  return contained ?? faction;
 }
 
 /** The rename map as (from → to) pairs for the server, one per chain start. */
@@ -259,15 +308,40 @@ export function worldOnPath(path: MessageNode[], renames?: Renames, overrides?: 
   let flashpoints: string[] = [];
   for (const n of path) {
     if (n.role !== "assistant" || !n.update) continue;
-    const u = applyOverrides(applyRenames(n.update, renames), overrides);
-    for (const f of u.figures) figures.set(norm(f.name), f);
-    for (const p of u.powers) powers.set(norm(p.name), p);
+    const u = applyRenames(n.update, renames);
+    for (const p of u.powers) {
+      // A power re-listed under a variant name updates the earlier entry.
+      const existing = [...powers.keys()].find((k) => sameEntity(k, p.name));
+      if (existing) powers.set(existing, { ...p, name: powers.get(existing)!.name });
+      else powers.set(norm(p.name), p);
+    }
+    for (const f of u.figures) {
+      // Same person under a variant name ("Emperor Franz Joseph I") replaces the
+      // earlier entry but keeps its first-seen name, so renames stay attached.
+      const existing = [...figures.keys()].find((k) => sameEntity(k, f.name));
+      if (existing) figures.set(existing, { ...f, name: figures.get(existing)!.name });
+      else figures.set(norm(f.name), f);
+    }
     ledger.push(...u.ledger);
     if (u.flashpoints.length) flashpoints = u.flashpoints;
   }
+  // Hand-set values apply after merging, keyed by the displayed (first-seen) name,
+  // so a later variant name cannot shake them off.
+  const setPostures = overrides?.powers ?? {};
+  const setStatuses = overrides?.figures ?? {};
+  const setFactions = overrides?.factions ?? {};
+  const finalPowers = [...powers.entries()].map(([key, p]) =>
+    setPostures[key] ? { ...p, posture: setPostures[key] } : p
+  );
+  const powerNames = finalPowers.map((p) => p.name);
   return {
-    figures: [...figures.values()],
-    powers: [...powers.values()],
+    figures: [...figures.entries()].map(([key, f]) => ({
+      ...f,
+      status: setStatuses[key] ?? f.status,
+      // A hand-set faction wins as given; the narrator's snaps to a matching power name.
+      faction: setFactions[key] !== undefined ? setFactions[key] : canonicalFaction(f.faction, powerNames),
+    })),
+    powers: finalPowers,
     ledger: ledger
       .map((e, i) => ({ e, i }))
       .sort((a, b) => a.e.year - b.e.year || a.i - b.i)

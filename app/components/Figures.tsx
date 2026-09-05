@@ -22,8 +22,8 @@ const STATUS_CLS: Record<FigureStatus, string> = {
 
 type Group = { faction: string; figures: Figure[] };
 
-/** Figures grouped under their faction, in first-seen order; blank factions last. */
-function groupByFaction(figures: Figure[], unaffiliated: string): Group[] {
+/** Figures grouped under their faction, factions A to Z; blank factions last. */
+function groupByFaction(figures: Figure[], unaffiliated: string, lang: string): Group[] {
   const groups = new Map<string, Group>();
   for (const f of figures) {
     const key = f.faction ? norm(f.faction) : "";
@@ -36,26 +36,45 @@ function groupByFaction(figures: Figure[], unaffiliated: string): Group[] {
   }
   const out = [...groups.entries()];
   const blank = out.find(([k]) => k === "");
-  return [...out.filter(([k]) => k !== "").map(([, g]) => g), ...(blank ? [blank[1]] : [])];
+  const named = out
+    .filter(([k]) => k !== "")
+    .map(([, g]) => g)
+    .sort((a, b) => a.faction.localeCompare(b.faction, lang));
+  return [...named, ...(blank ? [blank[1]] : [])];
 }
 
 export function Figures({
   figures,
   sources,
+  factions,
   overrides,
+  factionOverrides,
   onRename,
   onSetStatus,
+  onSetFaction,
 }: {
   figures: Figure[];
   sources: Source[];
+  /** Power names a figure can be assigned to. */
+  factions: string[];
   /** Statuses the user set by hand, keyed by normalised name. */
   overrides?: Record<string, FigureStatus>;
+  /** Factions the user set by hand, keyed by normalised name. */
+  factionOverrides?: Record<string, string>;
   onRename: (from: string, to: string) => void;
   onSetStatus: (name: string, status: FigureStatus | null) => void;
+  /** "" = unaffiliated; null = back to the narrator's faction. */
+  onSetFaction: (name: string, faction: string | null) => void;
 }) {
-  const { t } = useLang();
+  const { lang, t } = useLang();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const statusOptions = STATUS_ORDER.map((v) => ({ value: v, label: t.figureStatus[v], cls: STATUS_CLS[v] }));
+  const neutral = "text-zinc-500 dark:text-zinc-400";
+  const factionOptions = (current: string) => {
+    const names = [...factions];
+    if (current && !names.some((n) => norm(n) === norm(current))) names.unshift(current);
+    return [...names.map((n) => ({ value: n, label: n, cls: neutral })), { value: "", label: t.unaffiliated, cls: neutral }];
+  };
 
   if (figures.length === 0) {
     return <p className="text-sm text-zinc-500 dark:text-zinc-400">{t.figuresEmpty}</p>;
@@ -71,7 +90,7 @@ export function Figures({
 
   return (
     <div className="space-y-3">
-      {groupByFaction(figures, t.unaffiliated).map((g) => {
+      {groupByFaction(figures, t.unaffiliated, lang).map((g) => {
         const key = norm(g.faction);
         const open = !collapsed.has(key);
         const dead = g.figures.filter((f) => f.status === "dead").length;
@@ -123,7 +142,18 @@ export function Figures({
                               )}
                             </EditableName>
                           </div>
-                          <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">{f.role}</div>
+                          <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 flex items-center gap-1 min-w-0">
+                            <span className="truncate">{f.role}</span>
+                            <span aria-hidden>·</span>
+                            <PillMenu
+                              variant="text"
+                              value={f.faction}
+                              options={factionOptions(f.faction)}
+                              overridden={factionOverrides?.[norm(f.name)] !== undefined}
+                              title={t.factionTitle}
+                              onChange={(next) => onSetFaction(f.name, next)}
+                            />
+                          </div>
                         </div>
                         <PillMenu
                           value={status}

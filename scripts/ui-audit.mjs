@@ -50,6 +50,7 @@ const u2 = {
     { year: 1456, month: 7, day: 22, label: "Hunyadi breaks the Ottoman siege of Belgrade with Byzantine envoys present", type: "alt", source: null },
   ],
   figures: [
+    { name: "Emperor Constantine XI Palaiologos", role: "Byzantine Emperor", faction: "Byzantine Empire (court)", status: "stable", realFate: "Died fighting on the walls on 29 May 1453; body never identified.", altFate: "Weighs Union with Rome against the anger of his own clergy.", source: 2 },
     { name: "Loukas Notaras", role: "Megas doux", faction: "Byzantine Empire", status: "ill", realFate: "Executed by Mehmed II days after the fall.", altFate: "Survives but wastes with fever through the winter of 1454.", source: null },
     { name: "John Hunyadi", role: "Regent-Governor of Hungary", faction: "Kingdom of Hungary", status: "rising", realFate: "Won at Belgrade in 1456 and died of plague weeks later.", altFate: "Victor of Belgrade and the natural leader of a Christian league.", source: null },
   ],

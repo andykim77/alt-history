@@ -141,6 +141,7 @@ const en = {
   backToNarrator: "Back to the narrator's choice",
   postureTitle: "Posture",
   statusTitle: "Status",
+  factionTitle: "Faction",
   // powers
   posture: {
     hegemon: "hegemon",
@@ -156,6 +157,8 @@ const en = {
   tier: { 1: "Marginal", 2: "Minor power", 3: "Regional power", 4: "Major power", 5: "Great power" } as Record<number, string>,
   strength: (n: number) => `Strength ${n}/5`,
   interests: "Strategic interests",
+  bloc: (leader: string) => `${leader} bloc`,
+  nonAligned: "Non-aligned",
   powersEmpty:
     "States, dynasties, and institutions will be tracked here with their strategic interests, strength, posture, and relations to one another.",
   // ledger
@@ -264,6 +267,7 @@ const ko: Strings = {
   backToNarrator: "서술자의 선택으로 되돌리기",
   postureTitle: "태세",
   statusTitle: "상태",
+  factionTitle: "소속",
   posture: {
     hegemon: "패권",
     expanding: "팽창",
@@ -278,6 +282,8 @@ const ko: Strings = {
   tier: { 1: "미미한 세력", 2: "약소 세력", 3: "지역 강국", 4: "강대국", 5: "초강대국" },
   strength: (n) => `국력 ${n}/5`,
   interests: "전략적 이해관계",
+  bloc: (leader) => `${leader} 진영`,
+  nonAligned: "비동맹",
   powersEmpty: "국가, 왕조, 기관을 전략적 이해관계, 국력, 태세, 상호 관계와 함께 여기서 추적합니다.",
   year: "연도",
   ourWorld: "실제 세계",

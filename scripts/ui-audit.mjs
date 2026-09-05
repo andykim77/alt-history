@@ -25,13 +25,13 @@ const u1 = {
     { year: 1454, month: null, day: null, label: "Constantine XI seeks dynastic alliances and Western aid", type: "alt", source: null },
   ],
   figures: [
-    { name: "Constantine XI Palaiologos", role: "Byzantine Emperor", faction: "Byzantine Empire", status: "rising", realFate: "Died fighting on the walls on 29 May 1453; body never identified.", altFate: "Survives the assault; hailed as the saviour of the City and begins courting Western allies.", source: 2 },
+    { name: "Constantine XI Palaiologos", role: "Byzantine Emperor", faction: "Byzantine Empire", status: "dominant", realFate: "Died fighting on the walls on 29 May 1453; body never identified.", altFate: "Survives the assault; hailed as the saviour of the City and begins courting Western allies.", source: 2 },
     { name: "Mehmed II", role: "Ottoman Sultan", faction: "Ottoman Empire", status: "declining", realFate: "Took the city and ruled until 1481 as 'the Conqueror'.", altFate: "Humiliated; faces Janissary unrest and a resurgent Halil Pasha faction at court.", source: 3 },
-    { name: "Giovanni Giustiniani", role: "Genoese condottiero", faction: "Republic of Genoa", status: "stable", realFate: "Wounded during the final assault and died of his wounds days later on Chios.", altFate: "Lightly wounded but stays at his post; the Genoese contingent holds.", source: 1 },
+    { name: "Giovanni Giustiniani", role: "Genoese condottiero", faction: "Republic of Genoa", status: "wounded", realFate: "Wounded during the final assault and died of his wounds days later on Chios.", altFate: "Lightly wounded but stays at his post; the Genoese contingent holds.", source: 1 },
   ],
   powers: [
     { name: "Byzantine Empire", kind: "empire", strength: 2, posture: "defensive", interests: ["Secure Western military aid without surrendering the Church to Rome", "Rebuild the Theodosian Walls before the next campaign season", "Keep the Genoese and Venetians committed to the City's defence"], relations: [{ with: "Ottoman Empire", kind: "war" }, { with: "Republic of Genoa", kind: "ally" }, { with: "Republic of Venice", kind: "trade" }] },
-    { name: "Ottoman Empire", kind: "empire", strength: 5, posture: "consolidating", interests: ["Restore the Sultan's prestige after the failed siege", "Neutralise Constantinople's harbour before another attempt", "Prevent a Christian coalition forming in the Balkans"], relations: [{ with: "Byzantine Empire", kind: "war" }, { with: "Republic of Venice", kind: "rival" }, { with: "Kingdom of Hungary", kind: "rival" }] },
+    { name: "Ottoman Empire", kind: "empire", strength: 5, posture: "hegemon", interests: ["Restore the Sultan's prestige after the failed siege", "Neutralise Constantinople's harbour before another attempt", "Prevent a Christian coalition forming in the Balkans"], relations: [{ with: "Byzantine Empire", kind: "war" }, { with: "Republic of Venice", kind: "rival" }, { with: "Kingdom of Hungary", kind: "rival" }] },
     { name: "Republic of Genoa", kind: "republic", strength: 3, posture: "consolidating", interests: ["Protect the Galata colony and Black Sea trade", "Extract commercial privileges from a grateful emperor"], relations: [{ with: "Byzantine Empire", kind: "ally" }, { with: "Republic of Venice", kind: "rival" }] },
   ],
   ledger: [
@@ -49,7 +49,10 @@ const u2 = {
     { year: 1455, month: 3, day: null, label: "Papal legate arrives with terms for a new crusade", type: "alt", source: null },
     { year: 1456, month: 7, day: 22, label: "Hunyadi breaks the Ottoman siege of Belgrade with Byzantine envoys present", type: "alt", source: null },
   ],
-  figures: [{ name: "John Hunyadi", role: "Regent-Governor of Hungary", faction: "Kingdom of Hungary", status: "rising", realFate: "Won at Belgrade in 1456 and died of plague weeks later.", altFate: "Victor of Belgrade and the natural leader of a Christian league.", source: null }],
+  figures: [
+    { name: "Loukas Notaras", role: "Megas doux", faction: "Byzantine Empire", status: "ill", realFate: "Executed by Mehmed II days after the fall.", altFate: "Survives but wastes with fever through the winter of 1454.", source: null },
+    { name: "John Hunyadi", role: "Regent-Governor of Hungary", faction: "Kingdom of Hungary", status: "rising", realFate: "Won at Belgrade in 1456 and died of plague weeks later.", altFate: "Victor of Belgrade and the natural leader of a Christian league.", source: null },
+  ],
   powers: [
     { name: "Kingdom of Hungary", kind: "kingdom", strength: 3, posture: "expanding", interests: ["Push the Ottoman frontier back beyond the Danube", "Lead, not follow, any crusade"], relations: [{ with: "Ottoman Empire", kind: "war" }, { with: "Byzantine Empire", kind: "ally" }] },
     { name: "Holy Roman Empire of the German Nation", kind: "empire", strength: 3, posture: "fracturing", interests: ["Keep the princes from backing rival crusade leaders", "Avoid paying for a war on the Danube"], relations: [{ with: "Kingdom of Hungary", kind: "rival" }, { with: "Republic of Venice", kind: "trade" }] },
@@ -63,7 +66,9 @@ const u3 = {
     { year: 1457, month: null, day: null, label: "Mehmed II deposed in favour of his son Bayezid under a regency", type: "alt", source: null },
   ],
   figures: [{ name: "Mehmed II", role: "Deposed Ottoman Sultan", faction: "Ottoman Empire", status: "dead", realFate: "Took the city and ruled until 1481 as 'the Conqueror'.", altFate: "Deposed and quietly strangled in 1457; remembered as Mehmed the Unlucky.", source: 3 }],
-  powers: [{ name: "Ottoman Empire", kind: "empire", strength: 4, posture: "fracturing", interests: ["Stabilise the succession under a child sultan", "Hold Rumelia against Hungarian pressure"], relations: [{ with: "Byzantine Empire", kind: "neutral" }, { with: "Kingdom of Hungary", kind: "war" }] }],
+  powers: [
+    { name: "Despotate of the Morea", kind: "despotate", strength: 1, posture: "fallen", interests: ["Palaiologos cadets seek Venetian pensions", "Local archons bargain with whoever holds Mystras"], relations: [{ with: "Byzantine Empire", kind: "vassal" }] },
+    { name: "Ottoman Empire", kind: "empire", strength: 4, posture: "fracturing", interests: ["Stabilise the succession under a child sultan", "Hold Rumelia against Hungarian pressure"], relations: [{ with: "Byzantine Empire", kind: "neutral" }, { with: "Kingdom of Hungary", kind: "war" }] }],
   ledger: [{ year: 1457, ours: "Mehmed II secure on his throne, campaigning in Serbia.", theirs: "Mehmed II deposed; Ottoman court fractures under a regency.", source: null }],
   flashpoints: ["Does Constantine XI exploit the regency to retake Thracian towns?", "Which faction controls the young Bayezid?", "Do the Karamanids rise in Anatolia?"],
 };
@@ -141,6 +146,19 @@ for (const scheme of ["light", "dark"]) {
   await tab("figures");
   const card = await page.$("main ~ aside li");
   if (card) { await card.hover(); await shot("figures-hover"); }
+  // Switch to branch B (the Ottoman-court branch) to show a fallen power.
+  await tab("compare");
+  await page.evaluate(() => { const b = [...document.querySelectorAll("main ~ aside button")].find((x) => x.textContent.trim().startsWith("B ·")); b?.click(); });
+  await new Promise((r) => setTimeout(r, 250));
+  await tab("powers");
+  await shot("powers-fallen");
+  // Open the posture menu on the first card, then pick "collapsing" by hand.
+  await page.evaluate(() => document.querySelector("main ~ aside li button[aria-haspopup=listbox]")?.click());
+  await new Promise((r) => setTimeout(r, 250));
+  await shot("powers-menu");
+  await page.evaluate(() => { const o = [...document.querySelectorAll("[role=option]")].find((x) => x.textContent.trim() === "collapsing"); o?.click(); });
+  await new Promise((r) => setTimeout(r, 250));
+  await shot("powers-override");
   await page.close();
 }
 

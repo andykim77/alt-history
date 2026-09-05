@@ -26,7 +26,16 @@ export type TimelineEvent = {
   source?: number | null;
 };
 
-export type FigureStatus = "rising" | "stable" | "declining" | "dead" | "unknown";
+/** From unchallenged ("dominant") down to "dead". */
+export type FigureStatus =
+  | "dominant"
+  | "rising"
+  | "stable"
+  | "declining"
+  | "wounded"
+  | "ill"
+  | "dead"
+  | "unknown";
 
 export type Figure = {
   name: string;
@@ -40,7 +49,16 @@ export type Figure = {
   source?: number | null;
 };
 
-export type Posture = "expanding" | "consolidating" | "defensive" | "fracturing" | "collapsing" | "emerging";
+/** From unchallenged dominance ("hegemon") down to no longer existing ("fallen"). */
+export type Posture =
+  | "hegemon"
+  | "expanding"
+  | "emerging"
+  | "consolidating"
+  | "defensive"
+  | "fracturing"
+  | "collapsing"
+  | "fallen";
 export type Relation = "ally" | "rival" | "war" | "vassal" | "trade" | "neutral";
 
 export type Power = {
@@ -98,6 +116,11 @@ export type ScenarioMeta = {
   sourceTitles: string[];
   /** Names the user has changed in the dossier; the model should adopt them. */
   renames?: { from: string; to: string }[];
+  /** Pill values the user has set by hand; the model should keep them. */
+  overrides?: {
+    powers: { name: string; posture: Posture }[];
+    figures: { name: string; status: FigureStatus }[];
+  };
 };
 
 /** Parse "YYYY", "YYYY-MM", "YYYY-MM-DD" (leading "-" for BCE) or a bare year. */

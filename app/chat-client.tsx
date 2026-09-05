@@ -9,6 +9,7 @@ import {
   loadStore,
   newScenario,
   norm,
+  overridePairs,
   pathTo,
   renamePairs,
   saveStore,
@@ -17,6 +18,7 @@ import {
   uid,
   worldOnPath,
   type MessageNode,
+  type Overrides,
   type Scenario,
   type Store,
 } from "@/lib/scenario";
@@ -73,7 +75,10 @@ export default function ChatClient() {
   );
   const path = useMemo(() => (active ? pathTo(active, active.leafId) : []), [active]);
   const pathEvents = useMemo(() => eventsOnPath(path), [path]);
-  const world = useMemo(() => worldOnPath(path, active?.renames), [path, active?.renames]);
+  const world = useMemo(
+    () => worldOnPath(path, active?.renames, active?.overrides),
+    [path, active?.renames, active?.overrides]
+  );
 
   function renameEntity(from: string, to: string) {
     if (!active) return;
@@ -82,6 +87,16 @@ export default function ChatClient() {
       renames: { ...(s.renames ?? {}), [norm(from)]: to },
       updatedAt: Date.now(),
     }));
+  }
+  /** Set (or clear with null) a pill the user picked by hand. */
+  function setOverride(kind: "powers" | "figures", name: string, value: string | null) {
+    if (!active) return;
+    updateScenario(active.id, (s) => {
+      const map = { ...(s.overrides?.[kind] ?? {}) } as Record<string, string>;
+      if (value === null) delete map[norm(name)];
+      else map[norm(name)] = value;
+      return { ...s, overrides: { ...(s.overrides ?? {}), [kind]: map } as Overrides, updatedAt: Date.now() };
+    });
   }
 
   const updateScenario = useCallback((id: string, fn: (s: Scenario) => Scenario) => {
@@ -175,13 +190,14 @@ export default function ChatClient() {
     // Build the request from the tree *before* the state update lands.
     const parentPath = pathTo(scenario, parentId);
     const request: ChatRequest = {
-      messages: toApiMessages([...parentPath, userNode], scenario.renames),
+      messages: toApiMessages([...parentPath, userNode], scenario.renames, scenario.overrides),
       scenario: {
         title: scenario.grounded ? scenario.title : undefined,
         divergence: scenario.grounded ? scenario.divergence : undefined,
         divergenceYear: scenario.grounded ? scenario.divergenceYear : null,
         sourceTitles: scenario.sourceTitles,
         renames: renamePairs(scenario.renames),
+        overrides: overridePairs(scenario.overrides, worldOnPath(parentPath, scenario.renames, scenario.overrides)),
       },
       lang,
     };
@@ -406,8 +422,23 @@ export default function ChatClient() {
         {tab === "timeline" && (
           <Timeline events={pathEvents} sources={active.sources} divergenceYear={active.divergenceYear} />
         )}
-        {tab === "figures" && <Figures figures={world.figures} sources={active.sources} onRename={renameEntity} />}
-        {tab === "powers" && <Powers powers={world.powers} onRename={renameEntity} />}
+        {tab === "figures" && (
+          <Figures
+            figures={world.figures}
+            sources={active.sources}
+            overrides={active.overrides?.figures}
+            onRename={renameEntity}
+            onSetStatus={(name, status) => setOverride("figures", name, status)}
+          />
+        )}
+        {tab === "powers" && (
+          <Powers
+            powers={world.powers}
+            overrides={active.overrides?.powers}
+            onRename={renameEntity}
+            onSetPosture={(name, posture) => setOverride("powers", name, posture)}
+          />
+        )}
         {tab === "changes" && <Ledger ledger={world.ledger} sources={active.sources} />}
         {tab === "sources" && <SourceList sources={active.sources} />}
         {tab === "compare" && (

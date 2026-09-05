@@ -5,7 +5,9 @@ import {
   dateOrdinal,
   type ApiMessage,
   type Figure,
+  type FigureStatus,
   type LedgerEntry,
+  type Posture,
   type Power,
   type Role,
   type Source,
@@ -15,6 +17,12 @@ import {
 
 /** User renames keyed by the normalised displayed name; chains are followed. */
 export type Renames = Record<string, string>;
+
+/** Pill values the user has set by hand, keyed by normalised (renamed) name. */
+export type Overrides = {
+  powers?: Record<string, Posture>;
+  figures?: Record<string, FigureStatus>;
+};
 
 export type NodeStatus = "streaming" | "stopped" | "error";
 
@@ -47,6 +55,8 @@ export type Scenario = {
   engine?: string;
   /** Figure/power names the user has edited. */
   renames?: Renames;
+  /** Posture/status pills the user has set by hand. */
+  overrides?: Overrides;
   nodes: Record<string, MessageNode>;
   /** The node currently displayed at the bottom of the thread. */
   leafId: string | null;
@@ -200,6 +210,34 @@ export function applyRenames(u: WorldUpdate, renames: Renames | undefined): Worl
   };
 }
 
+/** Apply the user's pill choices to an update (after renames). */
+export function applyOverrides(u: WorldUpdate, overrides: Overrides | undefined): WorldUpdate {
+  const powers = overrides?.powers ?? {};
+  const figures = overrides?.figures ?? {};
+  if (Object.keys(powers).length === 0 && Object.keys(figures).length === 0) return u;
+  return {
+    ...u,
+    figures: u.figures.map((f) => (figures[norm(f.name)] ? { ...f, status: figures[norm(f.name)] } : f)),
+    powers: u.powers.map((p) => (powers[norm(p.name)] ? { ...p, posture: powers[norm(p.name)] } : p)),
+  };
+}
+
+/** The user's pill choices as lists for the server, with display names. */
+export function overridePairs(
+  overrides: Overrides | undefined,
+  world: WorldState
+): { powers: { name: string; posture: Posture }[]; figures: { name: string; status: FigureStatus }[] } {
+  const powers = Object.entries(overrides?.powers ?? {}).flatMap(([key, posture]) => {
+    const p = world.powers.find((x) => norm(x.name) === key);
+    return p ? [{ name: p.name, posture }] : [];
+  });
+  const figures = Object.entries(overrides?.figures ?? {}).flatMap(([key, status]) => {
+    const f = world.figures.find((x) => norm(x.name) === key);
+    return f ? [{ name: f.name, status }] : [];
+  });
+  return { powers, figures };
+}
+
 /** The rename map as (from → to) pairs for the server, one per chain start. */
 export function renamePairs(renames: Renames | undefined): { from: string; to: string }[] {
   if (!renames) return [];
@@ -214,14 +252,14 @@ export function renamePairs(renames: Renames | undefined): { from: string; to: s
 /** Fold every reply's update along a path into the current world state.
  *  Figures and powers are keyed by (renamed) name — later entries replace earlier
  *  ones, keeping first-seen order; ledger rows accumulate; flashpoints are the latest. */
-export function worldOnPath(path: MessageNode[], renames?: Renames): WorldState {
+export function worldOnPath(path: MessageNode[], renames?: Renames, overrides?: Overrides): WorldState {
   const figures = new Map<string, Figure>();
   const powers = new Map<string, Power>();
   const ledger: LedgerEntry[] = [];
   let flashpoints: string[] = [];
   for (const n of path) {
     if (n.role !== "assistant" || !n.update) continue;
-    const u = applyRenames(n.update, renames);
+    const u = applyOverrides(applyRenames(n.update, renames), overrides);
     for (const f of u.figures) figures.set(norm(f.name), f);
     for (const p of u.powers) powers.set(norm(p.name), p);
     ledger.push(...u.ledger);
@@ -245,7 +283,7 @@ export function sortEvents<T extends TimelineEvent>(events: T[]): T[] {
     .map((x) => x.e);
 }
 
-export function toApiMessages(path: MessageNode[], renames?: Renames): ApiMessage[] {
+export function toApiMessages(path: MessageNode[], renames?: Renames, overrides?: Overrides): ApiMessage[] {
   return path
     .filter((n) => n.content.trim().length > 0 || n.role === "user")
     .map((n) => {
@@ -256,7 +294,7 @@ export function toApiMessages(path: MessageNode[], renames?: Renames): ApiMessag
       return {
         role: n.role,
         content: n.content,
-        update: raw ? applyRenames(raw, renames) : undefined,
+        update: raw ? applyOverrides(applyRenames(raw, renames), overrides) : undefined,
       };
     });
 }

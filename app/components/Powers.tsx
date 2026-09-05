@@ -1,16 +1,31 @@
 "use client";
 
+import { norm } from "@/lib/scenario";
 import type { Posture, Power, Relation } from "@/lib/types";
 import { EditableName } from "./EditableName";
 import { useLang } from "./LangContext";
+import { PillMenu } from "./PillMenu";
+
+const POSTURE_ORDER: Posture[] = [
+  "hegemon",
+  "expanding",
+  "emerging",
+  "consolidating",
+  "defensive",
+  "fracturing",
+  "collapsing",
+  "fallen",
+];
 
 const POSTURE_CLS: Record<Posture, string> = {
+  hegemon: "text-purple-700 dark:text-purple-200 bg-purple-500/20 ring-1 ring-purple-500/40",
   expanding: "text-emerald-700 dark:text-emerald-300 bg-emerald-500/15",
   emerging: "text-sky-700 dark:text-sky-300 bg-sky-500/15",
   consolidating: "text-zinc-700 dark:text-zinc-300 bg-zinc-500/15",
   defensive: "text-amber-700 dark:text-amber-300 bg-amber-500/15",
   fracturing: "text-orange-700 dark:text-orange-300 bg-orange-500/15",
   collapsing: "text-red-700 dark:text-red-300 bg-red-500/15",
+  fallen: "text-white bg-black dark:bg-black dark:text-zinc-200 dark:ring-1 dark:ring-white/25",
 };
 
 const RELATION_CLS: Record<Relation, string> = {
@@ -39,12 +54,18 @@ function Strength({ n }: { n: number }) {
 
 export function Powers({
   powers,
+  overrides,
   onRename,
+  onSetPosture,
 }: {
   powers: Power[];
+  /** Postures the user set by hand, keyed by normalised name. */
+  overrides?: Record<string, Posture>;
   onRename: (from: string, to: string) => void;
+  onSetPosture: (name: string, posture: Posture | null) => void;
 }) {
   const { t } = useLang();
+  const postureOptions = POSTURE_ORDER.map((v) => ({ value: v, label: t.posture[v], cls: POSTURE_CLS[v] }));
   if (powers.length === 0) {
     return <p className="text-sm text-zinc-500 dark:text-zinc-400">{t.powersEmpty}</p>;
   }
@@ -53,23 +74,32 @@ export function Powers({
     <ul className="space-y-3">
       {sorted.map((p) => {
         const posture: Posture = p.posture in POSTURE_CLS ? p.posture : "consolidating";
+        const fallen = posture === "fallen";
         return (
           <li
             key={p.name}
-            className="rounded-xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/[.03] p-3"
+            className={`rounded-xl border p-3 ${
+              fallen
+                ? "border-black/20 dark:border-white/15 bg-black/[.04] dark:bg-white/[.02] opacity-75"
+                : "border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/[.03]"
+            }`}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <div className="font-serif text-[15px] leading-tight">
+                <div className={`font-serif text-[15px] leading-tight ${fallen ? "line-through decoration-black/40 dark:decoration-white/40" : ""}`}>
                   <EditableName value={p.name} onRename={(next) => onRename(p.name, next)} />
                 </div>
                 <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
                   <Strength n={p.strength} />
                 </div>
               </div>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide ${POSTURE_CLS[posture]}`}>
-                {t.posture[posture]}
-              </span>
+              <PillMenu
+                value={posture}
+                options={postureOptions}
+                overridden={!!overrides?.[norm(p.name)]}
+                title={t.postureTitle}
+                onChange={(next) => onSetPosture(p.name, next)}
+              />
             </div>
             {p.interests.length > 0 && (
               <div className="mt-2">

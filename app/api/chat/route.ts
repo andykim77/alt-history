@@ -29,8 +29,8 @@ function yearLabel(y: number | null): string {
 
 const STATE_SCHEMA = `{
   "events": [ {"date": "<YYYY-MM-DD, always a full date; leading '-' for BCE, e.g. '1453-05-29', '-0216-08-02'>", "label": "<max 80 chars>", "type": "history"|"divergence"|"alt", "source": <citation number or null>} ],
-  "figures": [ {"name": "...", "role": "<title or function>", "faction": "<power they serve>", "status": "rising"|"stable"|"declining"|"dead"|"unknown", "realFate": "<what happened to them in real history, one sentence>", "altFate": "<what is happening to them here, one sentence>", "source": <citation number or null>} ],
-  "powers": [ {"name": "...", "kind": "<empire|kingdom|republic|church|league|dynasty|company|movement>", "strength": <1-5>, "posture": "expanding"|"consolidating"|"defensive"|"fracturing"|"collapsing"|"emerging", "interests": ["<strategic interest: what they want and why, max 90 chars>", ...], "relations": [ {"with": "<other power name>", "kind": "ally"|"rival"|"war"|"vassal"|"trade"|"neutral"} ]} ],
+  "figures": [ {"name": "...", "role": "<title or function>", "faction": "<power they serve>", "status": "dominant"|"rising"|"stable"|"declining"|"wounded"|"ill"|"dead"|"unknown", "realFate": "<what happened to them in real history, one sentence>", "altFate": "<what is happening to them here, one sentence>", "source": <citation number or null>} ],
+  "powers": [ {"name": "...", "kind": "<empire|kingdom|republic|church|league|dynasty|company|movement>", "strength": <1-5>, "posture": "hegemon"|"expanding"|"emerging"|"consolidating"|"defensive"|"fracturing"|"collapsing"|"fallen", "interests": ["<strategic interest: what they want and why, max 90 chars>", ...], "relations": [ {"with": "<other power name>", "kind": "ally"|"rival"|"war"|"vassal"|"trade"|"neutral"} ]} ],
   "ledger": [ {"year": <int>, "ours": "<what happened in real history, max 100 chars>", "theirs": "<what happens in this timeline instead, max 100 chars>", "source": <citation number or null>} ],
   "flashpoints": ["<an open tension or decision point the user could explore next, phrased as a question, max 90 chars>", "...", "..."]
 }`;
@@ -57,7 +57,23 @@ const STATUS_TEXT: Record<Lang, { narrating: string; narratingSlow: string; doss
   },
 };
 
-function buildSystemPrompt(g: Grounding, renames: { from: string; to: string }[], lang: Lang): string {
+type Overrides = NonNullable<ChatRequest["scenario"]["overrides"]>;
+
+function overrideBlock(o: Overrides | undefined): string {
+  if (!o || (o.powers.length === 0 && o.figures.length === 0)) return "";
+  const lines = [
+    ...o.powers.map((p) => `- power "${p.name}": posture "${p.posture}"`),
+    ...o.figures.map((f) => `- figure "${f.name}": status "${f.status}"`),
+  ];
+  return `\nSTATES SET BY THE USER — these are facts of this world now. Keep them in the JSON and let the narrative follow from them, unless the user's own message clearly changes them:\n${lines.join("\n")}\n`;
+}
+
+function buildSystemPrompt(
+  g: Grounding,
+  renames: { from: string; to: string }[],
+  lang: Lang,
+  overrides?: Overrides
+): string {
   // Sized from measured gateway numbers: Opus's output_tokens include hidden
   // reasoning, so visible English costs ~0.5 tokens/char and Korean ~1.6
   // tokens/char; the proxy drops replies after ~100 s at ~58 tokens/s. Targets
@@ -79,7 +95,7 @@ function buildSystemPrompt(g: Grounding, renames: { from: string; to: string }[]
 
 SCENARIO: ${g.title}
 POINT OF DIVERGENCE: ${g.divergence} (${yearLabel(g.divergenceYear)})
-${renameBlock}${LANGUAGE_RULE[lang]}
+${renameBlock}${overrideBlock(overrides)}${LANGUAGE_RULE[lang]}
 VERIFIED SOURCES — real history, from Wikipedia. Anything before the point of divergence must agree with these:
 ${sourceBlock}
 
@@ -92,8 +108,8 @@ RULES
 ${STATE_SCHEMA}
 Guidance for the JSON:
 - events: 4 to 6 NEW dated events introduced in this reply; never repeat events already on the timeline. EVERY event needs a full date, YYYY-MM-DD, never a bare year. Real events: the day recorded by the sources or well-established history; only if the record gives no day, fall back to YYYY-MM. Speculative events: you are writing this history, so commit to a specific, plausible day consistent with the narrative, the season (campaigns in summer, councils and coronations on feast days, sailings in spring), and the events around it; do not present it as documented. Use "history" for real pre-divergence events (with a source), "divergence" for the change itself (once, in the first reply), and "alt" for speculative consequences.
-- figures: 3 to 4 people who matter in this reply. Re-list a figure only if their status or altFate changed; a re-listed figure replaces the earlier entry. realFate must match the sources when covered.
-- powers: 3 to 4 powers active in this reply; each entry is that power's CURRENT full state (2 to 4 interests, relations to other named powers) and replaces any earlier entry for the same name.
+- figures: 3 to 4 people who matter in this reply. Re-list a figure only if their status or altFate changed; a re-listed figure replaces the earlier entry. realFate must match the sources when covered. Status runs "dominant" (unchallenged in their sphere; rare), "rising", "stable", "declining", "wounded" (physically hurt, outcome open), "ill" (sick or failing in health), "dead", "unknown". faction is the power they serve, spelled exactly as that power's name in the powers list, so figures group under it.
+- powers: 3 to 4 powers active in this reply; each entry is that power's CURRENT full state (2 to 4 interests, relations to other named powers) and replaces any earlier entry for the same name. Posture runs from "hegemon" (unchallenged dominance over its world, rare: at most one power at a time) through expanding, emerging, consolidating, defensive, fracturing, collapsing, to "fallen" (the power has ceased to exist: conquered, partitioned, or dissolved). When a power falls, list it once more with posture "fallen", strength 1, and interests describing what its remnants or successors want; it then stays fallen unless the story explicitly restores it.
 - ledger: 2 to 3 rows contrasting real history with this timeline at specific years.
 - flashpoints: exactly 3 open tensions the user could explore next.
 Output nothing after the JSON.`;
@@ -106,6 +122,23 @@ function serializeAssistant(m: ApiMessage): string {
     u.events.length || u.figures.length || u.powers.length || u.ledger.length || u.flashpoints.length;
   if (!hasContent) return m.content;
   return `${m.content}\n\n${STATE_DELIMITER}\n${JSON.stringify(u)}`;
+}
+
+const POSTURES = ["hegemon", "expanding", "emerging", "consolidating", "defensive", "fracturing", "collapsing", "fallen"] as const;
+const STATUSES = ["dominant", "rising", "stable", "declining", "wounded", "ill", "dead", "unknown"] as const;
+
+function sanitizeOverrides(raw: unknown): Overrides | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as { powers?: unknown; figures?: unknown };
+  const powers = (Array.isArray(r.powers) ? r.powers : [])
+    .filter((p) => p && typeof p.name === "string" && (POSTURES as readonly string[]).includes(p.posture))
+    .map((p) => ({ name: String(p.name).slice(0, 80), posture: p.posture as (typeof POSTURES)[number] }))
+    .slice(0, 40);
+  const figures = (Array.isArray(r.figures) ? r.figures : [])
+    .filter((f) => f && typeof f.name === "string" && (STATUSES as readonly string[]).includes(f.status))
+    .map((f) => ({ name: String(f.name).slice(0, 80), status: f.status as (typeof STATUSES)[number] }))
+    .slice(0, 40);
+  return powers.length || figures.length ? { powers, figures } : undefined;
 }
 
 function sanitizeMessages(raw: unknown): ApiMessage[] | null {
@@ -169,7 +202,7 @@ function sanitizeUpdate(raw: unknown, sourceCount: number): WorldUpdate {
         name,
         role: asStr(f.role, 100),
         faction: asStr(f.faction, 80),
-        status: oneOf(f.status, ["rising", "stable", "declining", "dead", "unknown"] as const, "unknown"),
+        status: oneOf(f.status, STATUSES, "unknown"),
         realFate: asStr(f.realFate, 240),
         altFate: asStr(f.altFate, 240),
         source: citation(f.source, sourceCount),
@@ -192,7 +225,7 @@ function sanitizeUpdate(raw: unknown, sourceCount: number): WorldUpdate {
         strength: Math.min(5, Math.max(1, strengthRaw)),
         posture: oneOf(
           p.posture,
-          ["expanding", "consolidating", "defensive", "fracturing", "collapsing", "emerging"] as const,
+          ["hegemon", "expanding", "emerging", "consolidating", "defensive", "fracturing", "collapsing", "fallen"] as const,
           "consolidating"
         ),
         interests: (Array.isArray(p.interests) ? p.interests : [])
@@ -369,6 +402,7 @@ export async function POST(req: NextRequest) {
       .filter((r) => r && typeof r.from === "string" && typeof r.to === "string" && r.from !== r.to)
       .map((r) => ({ from: r.from.slice(0, 80), to: r.to.slice(0, 80) }))
       .slice(0, 40),
+    overrides: sanitizeOverrides(body?.scenario?.overrides),
   };
 
   const latestUser = messages[messages.length - 1].content;
@@ -400,7 +434,7 @@ export async function POST(req: NextRequest) {
         });
 
         const upstreamMessages: LlmMessage[] = [
-          { role: "system", content: buildSystemPrompt(grounding, meta.renames, lang) },
+          { role: "system", content: buildSystemPrompt(grounding, meta.renames, lang, meta.overrides) },
           ...messages.map((m) => ({
             role: m.role,
             content: m.role === "assistant" ? serializeAssistant(m) : m.content,

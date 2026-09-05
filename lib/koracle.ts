@@ -133,14 +133,42 @@ export class KoracleError extends Error {
   }
 }
 
+/**
+ * POST /llm, retrying once when the connection itself fails (undici's bare
+ * "fetch failed": a reset or closed socket, not an HTTP error). Nothing has been
+ * consumed on a connection failure, so the retry only costs one more request.
+ */
+async function postLlm(body: Record<string, unknown>, token: string, signal?: AbortSignal): Promise<GatewayResponse> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await post("/llm", body, { authorization: "Bearer " + token }, signal);
+    } catch (err) {
+      if (signal?.aborted || attempt >= 2) throw describeNetworkError(err);
+      console.warn(`[koracle] connection failed (${networkDetail(err)}); retrying once`);
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+}
+
+function networkDetail(err: unknown): string {
+  const cause = (err as { cause?: { code?: string; message?: string } })?.cause;
+  return cause?.code ?? cause?.message ?? (err instanceof Error ? err.message : String(err));
+}
+
+function describeNetworkError(err: unknown): Error {
+  if (err instanceof Error && err.name === "AbortError") return err;
+  return new KoracleError(`K-Oracle connection failed (${networkDetail(err)}). Please try again.`, 0);
+}
+
 /** One completion. Throws KoracleError with a user-facing message on failure. */
 export async function koracleComplete(req: KoracleRequest): Promise<{ text: string; model: string }> {
   const { signal, ...body } = req;
+  const started = Date.now();
   let token = await getToken();
-  let r = await post("/llm", body, { authorization: "Bearer " + token }, signal);
+  let r = await postLlm(body, token, signal);
   if (r.status === 401) {
     token = await getToken(true);
-    r = await post("/llm", body, { authorization: "Bearer " + token }, signal);
+    r = await postLlm(body, token, signal);
   }
   if (r.status === 429) {
     const wait = Number(r.retryAfter) || null;
@@ -156,8 +184,10 @@ export async function koracleComplete(req: KoracleRequest): Promise<{ text: stri
   }
   const text = r.json.data?.text ?? "";
   const usage = r.json.data?.usage ?? {};
+  const out = Number(usage.output_tokens);
+  const hitCap = Number.isFinite(out) && body.max_tokens !== undefined && out >= Number(body.max_tokens);
   console.info(
-    `[koracle] ${r.json.data?.model ?? body.model ?? body.provider} out=${usage.output_tokens ?? "?"} in=${usage.input_tokens ?? "?"} max=${body.max_tokens ?? "-"} chars=${text.length}${r.json.data?.stop_reason ? ` stop=${r.json.data.stop_reason}` : ""}`
+    `[koracle] ${r.json.data?.model ?? body.model ?? body.provider} out=${usage.output_tokens ?? "?"} in=${usage.input_tokens ?? "?"} max=${body.max_tokens ?? "-"} chars=${text.length} ${Math.round((Date.now() - started) / 1000)}s${r.json.data?.stop_reason ? ` stop=${r.json.data.stop_reason}` : ""}${hitCap ? " HIT max_tokens (reply truncated)" : ""}`
   );
   return { text, model: r.json.data?.model ?? body.model ?? body.provider ?? "unknown" };
 }

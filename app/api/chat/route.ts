@@ -47,17 +47,23 @@ LANGUAGE: Write everything the user reads in Korean (한국어): the prose, the 
 const STATUS_TEXT: Record<Lang, { narrating: string; narratingSlow: string; dossier: string }> = {
   en: {
     narrating: "Narrating...",
-    narratingSlow: "Narrating (the full reply arrives at once, 15 to 40 seconds)...",
+    narratingSlow: "Narrating (the full reply arrives at once; a long chapter can take one to three minutes)...",
     dossier: "Updating the dossier...",
   },
   ko: {
     narrating: "서술하는 중...",
-    narratingSlow: "서술하는 중 (전체 응답이 한 번에 도착합니다, 15~40초)...",
+    narratingSlow: "서술하는 중 (전체 응답이 한 번에 도착합니다. 긴 장은 1~3분 걸릴 수 있습니다)...",
     dossier: "기록부를 갱신하는 중...",
   },
 };
 
 function buildSystemPrompt(g: Grounding, renames: { from: string; to: string }[], lang: Lang): string {
+  // Sized from measured gateway numbers: Opus's output_tokens include hidden
+  // reasoning, so visible English costs ~0.5 tokens/char and Korean ~1.6
+  // tokens/char; the proxy drops replies after ~100 s at ~58 tokens/s. Targets
+  // keep prose + JSON near 4,500 tokens with max_tokens 6000 as the guard.
+  const lengthTarget =
+    lang === "ko" ? "about 1,000 to 1,200 Korean characters (공백 제외 기준)" : "about 800 to 1,000 words";
   const sourceBlock =
     g.pages.length === 0
       ? "(No sources could be retrieved for this turn. Be explicit about uncertainty for pre-divergence claims.)"
@@ -81,14 +87,14 @@ RULES
 1. Real history before the divergence: verify it against the sources above and cite them inline as [1], [2], etc. If a source contradicts what you were about to say, follow the source. If a pre-divergence detail is not covered by any source, say so briefly ("the record is thin here") rather than inventing specifics.
 2. Everything after the divergence is speculation. Make it plausible, grounded in the real conditions the sources describe, and consistent with earlier turns and with the dossier you have already built. Never cite a source for a speculative event. The divergence changes only what follows it: anyone who died, and anything that ended, before the point of divergence stays that way unless the divergence itself is what saved them.
 3. Think in terms of actors and interests: who gains, who loses, what each power wants and what it can afford. Let consequences follow from those pressures rather than from coincidence.
-4. Write vivid prose, no more than about 350 words, organised under 2 or 3 short subheadings. Each subheading is a markdown "### " line of 2 to 5 words naming that section's theme or phase (for example "### The walls hold", "### Rome's dilemma", "### Winter of 1454"), followed by one or two short paragraphs. Use bold for key names; use lists sparingly; no other heading levels. Keep the JSON that follows compact; the prose and the JSON must both fit comfortably in one reply. Finish with a single closing sentence in plain prose, under the last subheading, that invites the user to push the scenario further (no "Hook:" label, no heading of its own).
+4. Write vivid, substantial prose of ${lengthTarget}, organised under 3 to 5 short subheadings. Each subheading is a markdown "### " line of 2 to 5 words naming that section's theme or phase (for example "### The walls hold", "### Rome's dilemma", "### Winter of 1454"), followed by two to four paragraphs. Cover the immediate aftermath, then the reactions of each major power and figure, then the slower consequences: institutions, trade, religion, ideas, ordinary life. Use bold for key names; use lists sparingly; no other heading levels. HARD LIMIT: the reply is cut off at a fixed size, and the JSON comes last, so prose that runs long destroys the dossier. Stop the prose at the target length even mid-thought if necessary; the JSON must always be complete. Finish with a single closing sentence in plain prose, under the last subheading, that invites the user to push the scenario further (no "Hook:" label, no heading of its own).
 5. After the prose, on its own line, write exactly ${STATE_DELIMITER} and then ONE JSON object with this shape:
 ${STATE_SCHEMA}
 Guidance for the JSON:
-- events: 3 to 6 NEW dated events introduced in this reply; never repeat events already on the timeline. EVERY event needs a full date, YYYY-MM-DD, never a bare year. Real events: the day recorded by the sources or well-established history; only if the record gives no day, fall back to YYYY-MM. Speculative events: you are writing this history, so commit to a specific, plausible day consistent with the narrative, the season (campaigns in summer, councils and coronations on feast days, sailings in spring), and the events around it; do not present it as documented. Use "history" for real pre-divergence events (with a source), "divergence" for the change itself (once, in the first reply), and "alt" for speculative consequences.
-- figures: 2 to 4 people who matter in this reply. Re-list a figure only if their status or altFate changed; a re-listed figure replaces the earlier entry. realFate must match the sources when covered.
-- powers: 2 to 4 powers active in this reply; each entry is that power's CURRENT full state (2 to 4 interests, relations to other named powers) and replaces any earlier entry for the same name.
-- ledger: 1 to 3 rows contrasting real history with this timeline at specific years.
+- events: 4 to 6 NEW dated events introduced in this reply; never repeat events already on the timeline. EVERY event needs a full date, YYYY-MM-DD, never a bare year. Real events: the day recorded by the sources or well-established history; only if the record gives no day, fall back to YYYY-MM. Speculative events: you are writing this history, so commit to a specific, plausible day consistent with the narrative, the season (campaigns in summer, councils and coronations on feast days, sailings in spring), and the events around it; do not present it as documented. Use "history" for real pre-divergence events (with a source), "divergence" for the change itself (once, in the first reply), and "alt" for speculative consequences.
+- figures: 3 to 4 people who matter in this reply. Re-list a figure only if their status or altFate changed; a re-listed figure replaces the earlier entry. realFate must match the sources when covered.
+- powers: 3 to 4 powers active in this reply; each entry is that power's CURRENT full state (2 to 4 interests, relations to other named powers) and replaces any earlier entry for the same name.
+- ledger: 2 to 3 rows contrasting real history with this timeline at specific years.
 - flashpoints: exactly 3 open tensions the user could explore next.
 Output nothing after the JSON.`;
 }
@@ -151,7 +157,7 @@ function sanitizeUpdate(raw: unknown, sourceCount: number): WorldUpdate {
       };
       u.events.push(ev);
     }
-    u.events = u.events.slice(0, 8);
+    u.events = u.events.slice(0, 10);
   }
 
   if (Array.isArray(r.figures)) {
@@ -404,7 +410,10 @@ export async function POST(req: NextRequest) {
         const splitter = new DelimiterSplitter(STATE_DELIMITER);
         let upstreamError: string | null = null;
         try {
-          for await (const delta of llmStream(upstreamMessages, { signal: req.signal, maxTokens: 8000 })) {
+          // The gateway accepts up to 8192, but its proxy drops replies that take
+          // longer than ~100 s (HTTP 524). At ~58 tokens/s on Opus, 6000 keeps a
+          // runaway reply truncated (and salvaged) instead of lost.
+          for await (const delta of llmStream(upstreamMessages, { signal: req.signal, maxTokens: 6000 })) {
             const prose = splitter.push(delta);
             if (prose) send({ type: "delta", text: prose });
           }

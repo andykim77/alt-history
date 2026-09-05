@@ -142,6 +142,8 @@ export function dateOrdinal(e: { year: number; month?: number | null; day?: numb
 export type ChatRequest = {
   messages: ApiMessage[];
   scenario: ScenarioMeta;
+  /** Language the narrator should write in ("en" default, "ko"). */
+  lang?: "en" | "ko";
 };
 
 /** Server -> client SSE payloads (each is one `data:` line as JSON). */

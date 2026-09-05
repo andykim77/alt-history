@@ -22,6 +22,11 @@ What makes it more than a chat box:
   edited into a new branch. A compare view shows two branches' timelines side by side,
   with the shared history separated from where they diverge.
 - **Local persistence.** Scenarios live in your browser's `localStorage`. No accounts.
+- **English or Korean.** The EN / 한국어 switch in the header changes the whole interface
+  (labels, dates such as "기원전 216년 8월 2일", starter prompts) and tells the narrator to
+  write in that language, dossier included. The choice is remembered per browser, and
+  first-time visitors with a Korean browser start in Korean. Sources stay on English
+  Wikipedia for coverage; the narrator reads them and writes Korean.
 
 Built with Next.js (App Router) and Tailwind. The narrator can run on either
 [OpenRouter](https://openrouter.ai) (free-tier models, streamed) or the K-Oracle LLM

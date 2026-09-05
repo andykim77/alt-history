@@ -21,6 +21,8 @@ import {
   type Store,
 } from "@/lib/scenario";
 import type { ChatRequest, StreamEvent, WorldUpdate } from "@/lib/types";
+import { LANGS, STRINGS, detectLang, fmtYear, saveLang, type Lang } from "@/lib/i18n";
+import { LangContext } from "./components/LangContext";
 import { Sidebar } from "./components/Sidebar";
 import { Thread } from "./components/Thread";
 import { SourceList, Timeline } from "./components/Timeline";
@@ -30,19 +32,24 @@ import { Powers } from "./components/Powers";
 import { Ledger } from "./components/Ledger";
 
 type PanelTab = "timeline" | "figures" | "powers" | "changes" | "sources" | "compare";
-const TABS: { id: PanelTab; label: string }[] = [
-  { id: "timeline", label: "Timeline" },
-  { id: "figures", label: "Figures" },
-  { id: "powers", label: "Powers" },
-  { id: "changes", label: "Changes" },
-  { id: "sources", label: "Sources" },
-  { id: "compare", label: "Compare" },
-];
+const TABS: PanelTab[] = ["timeline", "figures", "powers", "changes", "sources", "compare"];
 type Drawer = "left" | "right" | null;
 
 export default function ChatClient() {
   const [store, setStore] = useState<Store>(emptyStore);
   const [loaded, setLoaded] = useState(false);
+  const [lang, setLangState] = useState<Lang>("en");
+  const t = STRINGS[lang];
+  const setLang = useCallback((next: Lang) => {
+    setLangState(next);
+    saveLang(next);
+  }, []);
+  useEffect(() => {
+    setLangState(detectLang());
+  }, []);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
   const [streaming, setStreaming] = useState<{ scenarioId: string; nodeId: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [tab, setTab] = useState<PanelTab>("timeline");
@@ -176,6 +183,7 @@ export default function ChatClient() {
         sourceTitles: scenario.sourceTitles,
         renames: renamePairs(scenario.renames),
       },
+      lang,
     };
 
     updateScenario(scenarioId, (s) => ({
@@ -185,7 +193,7 @@ export default function ChatClient() {
       updatedAt: now,
     }));
     setStreaming({ scenarioId, nodeId: assistantNode.id });
-    setStatus("Preparing...");
+    setStatus(t.preparing);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -203,7 +211,7 @@ export default function ChatClient() {
       });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.error || `Request failed (${res.status})`);
+        throw new Error(data?.error || t.requestFailed(res.status));
       }
 
       const reader = res.body.getReader();
@@ -219,11 +227,16 @@ export default function ChatClient() {
       const pending: { update: WorldUpdate | null } = { update: null };
       let revealDone: () => void = () => {};
       const revealed = new Promise<void>((resolve) => (revealDone = resolve));
+      let lastTick = Date.now();
       const tick = () => {
+        const now = Date.now();
+        const elapsed = Math.min(2000, now - lastTick);
+        lastTick = now;
         if (skipRevealRef.current) content = target;
         if (content.length < target.length) {
-          const remaining = target.length - content.length;
-          let next = content.length + Math.max(2, Math.min(14, Math.ceil(remaining / 60)));
+          // About 900 characters per second, measured by wall clock so a throttled
+          // background tab catches up instead of dripping one step per second.
+          let next = content.length + Math.max(2, Math.ceil(elapsed * 0.9));
           // Extend to the next whitespace so markdown markers do not flicker mid-word.
           const ws = /\s/.exec(target.slice(next, next + 24));
           if (ws) next += ws.index + 1;
@@ -314,7 +327,7 @@ export default function ChatClient() {
         updateNode(scenarioId, assistantNode.id, (n) => ({
           ...n,
           status: "error",
-          error: "The stream ended unexpectedly.",
+          error: t.streamEnded,
         }));
       }
     } catch (err) {
@@ -323,7 +336,7 @@ export default function ChatClient() {
         ...n,
         content: n.content.length >= content.length ? n.content : content,
         status: aborted ? "stopped" : "error",
-        error: aborted ? undefined : err instanceof Error ? err.message : "Something went wrong.",
+        error: aborted ? undefined : err instanceof Error ? err.message : t.somethingWrong,
       }));
     } finally {
       if (revealTimer) clearInterval(revealTimer);
@@ -355,35 +368,35 @@ export default function ChatClient() {
     <div className="flex h-full flex-col">
       <div className="px-3 pt-3 pb-2 border-b border-black/10 dark:border-white/10">
         <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-          Dossier
+          {t.dossier}
         </div>
         {active.divergence ? (
           <p className="font-serif text-[13.5px] leading-snug mt-0.5 text-zinc-700 dark:text-zinc-300 line-clamp-2">
             {active.divergence}
           </p>
         ) : (
-          <p className="text-xs text-zinc-500 mt-0.5">The world state builds as you explore.</p>
+          <p className="text-xs text-zinc-500 mt-0.5">{t.worldBuilds}</p>
         )}
         <div className="mt-2.5 grid grid-cols-3 gap-1" role="tablist">
-          {TABS.map((t) => (
+          {TABS.map((id) => (
             <button
-              key={t.id}
+              key={id}
               role="tab"
-              aria-selected={tab === t.id}
-              onClick={() => setTab(t.id)}
+              aria-selected={tab === id}
+              onClick={() => setTab(id)}
               className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-[12px] leading-none transition-colors ${
-                tab === t.id
+                tab === id
                   ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white"
                   : "border-black/10 dark:border-white/15 text-zinc-600 dark:text-zinc-300 hover:bg-black/[.04] dark:hover:bg-white/[.06]"
               }`}
             >
-              <span>{t.label}</span>
+              <span>{t.tabs[id]}</span>
               <span
                 className={`font-mono text-[10.5px] tabular-nums ${
-                  tab === t.id ? "opacity-70" : "text-zinc-400 dark:text-zinc-500"
-                } ${counts[t.id] > 0 ? "" : "invisible"}`}
+                  tab === id ? "opacity-70" : "text-zinc-400 dark:text-zinc-500"
+                } ${counts[id] > 0 ? "" : "invisible"}`}
               >
-                {counts[t.id] || 0}
+                {counts[id] || 0}
               </span>
             </button>
           ))}
@@ -409,31 +422,29 @@ export default function ChatClient() {
       </div>
     </div>
   ) : (
-    <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
-      Start a scenario and its dossier builds here: timeline, key figures, powers and
-      their interests, what changed, and the sources behind it.
-    </div>
+    <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">{t.panelEmpty}</div>
   );
 
   return (
+    <LangContext.Provider value={{ lang, t, setLang }}>
     <div className="flex h-dvh flex-col bg-zinc-50 dark:bg-zinc-950 text-black dark:text-zinc-50">
       <header className="flex items-center gap-3 border-b border-black/10 dark:border-white/10 px-3 sm:px-4 h-12 shrink-0">
         <button
           onClick={() => setDrawer(drawer === "left" ? null : "left")}
           className="lg:hidden rounded-md px-2 py-1 text-sm hover:bg-black/[.06] dark:hover:bg-white/[.08]"
-          aria-label="Scenarios"
+          aria-label={t.scenariosMenu}
         >
           ☰
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2 min-w-0">
-            <span className="font-serif font-medium text-[17px] tracking-tight shrink-0">Alt History Explorer</span>
+            <span className="font-serif font-medium text-[17px] tracking-tight shrink-0">{t.appTitle}</span>
             {active && Object.keys(active.nodes).length > 0 && (
               <span className="truncate text-sm text-zinc-500 dark:text-zinc-400">
-                / {scenarioDisplayTitle(active)}
+                / {scenarioDisplayTitle(active, t.untitled)}
                 {active.divergenceYear !== null && (
                   <span className="ml-2 font-mono text-xs rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1.5 py-0.5">
-                    {active.divergenceYear < 0 ? `${-active.divergenceYear} BCE` : active.divergenceYear}
+                    {fmtYear(active.divergenceYear, lang)}
                   </span>
                 )}
               </span>
@@ -443,16 +454,37 @@ export default function ChatClient() {
         {active?.engine && (
           <span
             className="hidden sm:inline font-mono text-[10px] text-zinc-400 dark:text-zinc-500 truncate max-w-[16rem]"
-            title="Model narrating this scenario"
+            title={t.engineTitle}
           >
             {active.engine}
           </span>
         )}
+        <div
+          className="flex items-center rounded-md border border-black/10 dark:border-white/15 p-0.5 text-[11px] shrink-0"
+          role="group"
+          aria-label="Language"
+        >
+          {LANGS.map((l) => (
+            <button
+              key={l}
+              onClick={() => setLang(l)}
+              aria-pressed={lang === l}
+              lang={l}
+              className={`rounded px-2 py-0.5 leading-none transition-colors ${
+                lang === l
+                  ? "bg-black text-white dark:bg-white dark:text-black"
+                  : "text-zinc-500 dark:text-zinc-400 hover:text-black dark:hover:text-white"
+              }`}
+            >
+              {l === "en" ? "EN" : "한국어"}
+            </button>
+          ))}
+        </div>
         <button
           onClick={() => setDrawer(drawer === "right" ? null : "right")}
           className="lg:hidden rounded-md px-2 py-1 text-sm hover:bg-black/[.06] dark:hover:bg-white/[.08]"
         >
-          Dossier
+          {t.dossier}
         </button>
       </header>
 
@@ -515,5 +547,6 @@ export default function ChatClient() {
         )}
       </div>
     </div>
+    </LangContext.Provider>
   );
 }

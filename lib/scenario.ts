@@ -262,10 +262,10 @@ export function toApiMessages(path: MessageNode[], renames?: Renames): ApiMessag
 }
 
 /** Human label for a branch: its last user message, shortened. */
-export function branchLabel(s: Scenario, leafId: string): string {
+export function branchLabel(s: Scenario, leafId: string, fallback = "Branch"): string {
   const path = pathTo(s, leafId);
   const lastUser = [...path].reverse().find((n) => n.role === "user");
-  const text = lastUser?.content.replace(/\s+/g, " ").trim() ?? "Branch";
+  const text = lastUser?.content.replace(/\s+/g, " ").trim() ?? fallback;
   return text.length > 56 ? text.slice(0, 53) + "..." : text;
 }
 
@@ -273,12 +273,12 @@ export function formatYear(y: number): string {
   return y < 0 ? `${-y} BCE` : String(y);
 }
 
-export function scenarioDisplayTitle(s: Scenario): string {
+export function scenarioDisplayTitle(s: Scenario, untitled = "New scenario"): string {
   if (s.title) return s.title;
   const root = rootNode(s);
   if (root) {
     const t = root.content.replace(/\s+/g, " ").trim();
     return t.length > 48 ? t.slice(0, 45) + "..." : t;
   }
-  return "New scenario";
+  return untitled;
 }

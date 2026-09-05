@@ -8,9 +8,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-serif: var(--font-newsreader), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-geist-sans), var(--font-noto-sans-kr);
+  --font-mono: var(--font-geist-mono), var(--font-noto-sans-kr);
+  --font-serif: var(--font-newsreader), var(--font-noto-serif-kr), Georgia, "Times New Roman", serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -28,13 +28,14 @@ body {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), var(--font-noto-sans-kr), Arial, Helvetica, sans-serif;
   overflow: hidden;
 }
 
 /* ---- rendered markdown in assistant replies ---- */
 .md {
-  font-family: var(--font-newsreader), Georgia, "Times New Roman", serif;
+  font-family: var(--font-newsreader), var(--font-noto-serif-kr), Georgia, "Times New Roman", serif;
+  word-break: keep-all;
   font-size: 1.05rem;
   line-height: 1.6;
 }

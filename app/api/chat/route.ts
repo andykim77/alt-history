@@ -35,7 +35,29 @@ const STATE_SCHEMA = `{
   "flashpoints": ["<an open tension or decision point the user could explore next, phrased as a question, max 90 chars>", "...", "..."]
 }`;
 
-function buildSystemPrompt(g: Grounding, renames: { from: string; to: string }[]): string {
+type Lang = "en" | "ko";
+
+const LANGUAGE_RULE: Record<Lang, string> = {
+  en: "",
+  ko: `
+LANGUAGE: Write everything the user reads in Korean (한국어): the prose, the subheadings, and every string VALUE in the JSON (event labels, figure roles, factions, real and alternate fates, power kinds, interests, ledger rows, flashpoints). Use standard Korean forms of names (e.g. 콘스탄티노폴리스, 메흐메트 2세, 구텐베르크). Narrate in literary written style (~했다/~이다); write the closing invitation in polite form (~해 보시겠습니까?). Keep JSON keys, enum values (type, status, posture, relation kind), dates, and citation markers like [1] exactly as specified, in English.
+`,
+};
+
+const STATUS_TEXT: Record<Lang, { narrating: string; narratingSlow: string; dossier: string }> = {
+  en: {
+    narrating: "Narrating...",
+    narratingSlow: "Narrating (the full reply arrives at once, 15 to 40 seconds)...",
+    dossier: "Updating the dossier...",
+  },
+  ko: {
+    narrating: "서술하는 중...",
+    narratingSlow: "서술하는 중 (전체 응답이 한 번에 도착합니다, 15~40초)...",
+    dossier: "기록부를 갱신하는 중...",
+  },
+};
+
+function buildSystemPrompt(g: Grounding, renames: { from: string; to: string }[], lang: Lang): string {
   const sourceBlock =
     g.pages.length === 0
       ? "(No sources could be retrieved for this turn. Be explicit about uncertainty for pre-divergence claims.)"
@@ -51,7 +73,7 @@ function buildSystemPrompt(g: Grounding, renames: { from: string; to: string }[]
 
 SCENARIO: ${g.title}
 POINT OF DIVERGENCE: ${g.divergence} (${yearLabel(g.divergenceYear)})
-${renameBlock}
+${renameBlock}${LANGUAGE_RULE[lang]}
 VERIFIED SOURCES — real history, from Wikipedia. Anything before the point of divergence must agree with these:
 ${sourceBlock}
 
@@ -344,12 +366,14 @@ export async function POST(req: NextRequest) {
   };
 
   const latestUser = messages[messages.length - 1].content;
+  const lang: Lang = body?.lang === "ko" ? "ko" : "en";
+  const statusText = STATUS_TEXT[lang];
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (ev: StreamEvent) => controller.enqueue(sse(ev));
       try {
-        const grounding = await groundTurn(meta, latestUser, (text) => send({ type: "status", text }));
+        const grounding = await groundTurn(meta, latestUser, (text) => send({ type: "status", text }), lang);
         send({
           type: "meta",
           title: grounding.title,
@@ -366,11 +390,11 @@ export async function POST(req: NextRequest) {
         send({ type: "sources", sources });
         send({
           type: "status",
-          text: supportsStreaming() ? "Narrating..." : "Narrating (the full reply arrives at once, 15 to 40 seconds)...",
+          text: supportsStreaming() ? statusText.narrating : statusText.narratingSlow,
         });
 
         const upstreamMessages: LlmMessage[] = [
-          { role: "system", content: buildSystemPrompt(grounding, meta.renames) },
+          { role: "system", content: buildSystemPrompt(grounding, meta.renames, lang) },
           ...messages.map((m) => ({
             role: m.role,
             content: m.role === "assistant" ? serializeAssistant(m) : m.content,
@@ -392,7 +416,7 @@ export async function POST(req: NextRequest) {
         if (rest) send({ type: "delta", text: rest });
         if (upstreamError) send({ type: "error", message: upstreamError });
 
-        send({ type: "status", text: "Updating the dossier..." });
+        send({ type: "status", text: statusText.dossier });
         const update = parseUpdate(splitter.structuredRaw, sources.length);
         send({ type: "update", update });
         send({ type: "done" });

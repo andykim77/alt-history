@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLang } from "./LangContext";
 
 /**
  * A name that turns into an input on click (or via the pencil). Enter saves,
@@ -17,6 +18,7 @@ export function EditableName({
   className?: string;
   children?: React.ReactNode;
 }) {
+  const { t } = useLang();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,7 +54,7 @@ export function EditableName({
         }}
         maxLength={80}
         className={`w-full bg-transparent border-b border-black/30 dark:border-white/40 outline-none ${className ?? ""}`}
-        aria-label="Edit name"
+        aria-label={t.editName}
       />
     );
   }
@@ -67,8 +69,8 @@ export function EditableName({
           setEditing(true);
         }}
         className="shrink-0 opacity-0 group-hover/name:opacity-60 focus:opacity-100 hover:!opacity-100 text-[11px] leading-none transition-opacity"
-        title="Rename"
-        aria-label={`Rename ${value}`}
+        title={t.rename}
+        aria-label={`${t.rename}: ${value}`}
       >
         ✎
       </button>

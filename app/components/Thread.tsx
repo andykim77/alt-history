@@ -3,15 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { childrenOf, type MessageNode, type Scenario } from "@/lib/scenario";
 import { Markdown } from "./Markdown";
-
-const STARTERS = [
-  "What if the printing press was never invented?",
-  "What if the Library of Alexandria never burned?",
-  "What if the Black Death never reached Europe?",
-  "What if Byzantium never fell in 1453?",
-  "What if the Mongols had conquered Western Europe?",
-  "What if Rome had lost the Second Punic War?",
-];
+import { useLang } from "./LangContext";
 
 type Props = {
   scenario: Scenario | null;
@@ -38,6 +30,7 @@ function SiblingSwitcher({
   node: MessageNode;
   onSwitch: (id: string) => void;
 }) {
+  const { t } = useLang();
   const siblings = childrenOf(scenario, node.parentId);
   if (siblings.length < 2) return null;
   const idx = siblings.findIndex((s) => s.id === node.id);
@@ -47,18 +40,16 @@ function SiblingSwitcher({
         disabled={idx <= 0}
         onClick={() => onSwitch(siblings[idx - 1].id)}
         className="px-1 rounded hover:bg-black/[.06] dark:hover:bg-white/[.08] disabled:opacity-30"
-        aria-label="Previous branch"
+        aria-label={t.prevBranch}
       >
         ‹
       </button>
-      <span className="font-mono">
-        branch {idx + 1}/{siblings.length}
-      </span>
+      <span className="font-mono">{t.branchOf(idx + 1, siblings.length)}</span>
       <button
         disabled={idx >= siblings.length - 1}
         onClick={() => onSwitch(siblings[idx + 1].id)}
         className="px-1 rounded hover:bg-black/[.06] dark:hover:bg-white/[.08] disabled:opacity-30"
-        aria-label="Next branch"
+        aria-label={t.nextBranch}
       >
         ›
       </button>
@@ -79,6 +70,7 @@ export function Thread({
   onBranchHere,
   onResumeLatest,
 }: Props) {
+  const { t } = useLang();
   const [input, setInput] = useState("");
   const [editParent, setEditParent] = useState<string | null | undefined>(undefined);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -129,19 +121,12 @@ export function Thread({
             <div className="space-y-5 pt-6">
               <div>
                 <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-                  New scenario
+                  {t.newScenarioLabel}
                 </div>
-                <h2 className="font-serif text-2xl leading-tight mt-1">
-                  Pick a moment in history. Change it. Watch the world reorganise.
-                </h2>
+                <h2 className="font-serif text-2xl leading-tight mt-1">{t.headline}</h2>
               </div>
               <div className="grid sm:grid-cols-2 gap-2 text-[13px]">
-                {[
-                  ["Sourced", "Real history up to the divergence is checked against Wikipedia and cited."],
-                  ["Timeline", "Every reply adds dated events, real and alternate, to a running timeline."],
-                  ["Figures & powers", "Key people and states are tracked: interests, strength, posture, fates."],
-                  ["Branches", "Fork at any reply, then compare how two branches diverge."],
-                ].map(([k, v]) => (
+                {t.features.map(([k, v]) => (
                   <div key={k} className="rounded-xl border border-black/10 dark:border-white/10 px-3 py-2.5">
                     <div className="font-medium">{k}</div>
                     <div className="text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">{v}</div>
@@ -149,10 +134,10 @@ export function Thread({
                 ))}
               </div>
               <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-                Or start from one of these
+                {t.orStart}
               </div>
               <div className="flex flex-wrap gap-2 -mt-3">
-                {STARTERS.map((s) => (
+                {t.starters.map((s) => (
                   <button
                     key={s}
                     onClick={() => onSend(s, null)}
@@ -180,9 +165,9 @@ export function Thread({
                         <button
                           onClick={() => startEdit(m)}
                           className="text-[11px] text-zinc-500 hover:text-black dark:hover:text-white"
-                          title="Edit this message and continue in a new branch"
+                          title={t.editTitle}
                         >
-                          Edit
+                          {t.edit}
                         </button>
                       )}
                     </div>
@@ -197,22 +182,20 @@ export function Thread({
                     ) : isLive ? (
                       <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                         <span className="inline-block h-2 w-2 rounded-full bg-current animate-pulse" />
-                        {status ?? "Thinking..."}
+                        {status ?? t.thinking}
                       </div>
                     ) : (
-                      <span className="text-sm text-zinc-500">(no reply)</span>
+                      <span className="text-sm text-zinc-500">{t.noReply}</span>
                     )}
                     {isLive && m.content && (
                       <span className="inline-block w-1.5 h-4 align-text-bottom bg-current opacity-60 animate-pulse ml-0.5" />
                     )}
                     {m.status === "error" && (
                       <div className="mt-2 text-xs text-red-600 dark:text-red-400 rounded-md bg-red-500/10 px-2.5 py-1.5">
-                        {m.error ?? "The reply failed."}
+                        {m.error ?? t.replyFailed}
                       </div>
                     )}
-                    {m.status === "stopped" && (
-                      <div className="mt-2 text-[11px] text-zinc-500">Stopped.</div>
-                    )}
+                    {m.status === "stopped" && <div className="mt-2 text-[11px] text-zinc-500">{t.stopped}</div>}
                   </div>
                   <div className="flex items-center gap-3 pl-1">
                     <SiblingSwitcher scenario={scenario} node={m} onSwitch={onSwitchSibling} />
@@ -220,16 +203,14 @@ export function Thread({
                       <button
                         onClick={() => onBranchHere(m.id)}
                         className="text-[11px] text-zinc-500 hover:text-black dark:hover:text-white"
-                        title="Continue from this point in a new direction"
+                        title={t.branchHereTitle}
                       >
-                        Branch here
+                        {t.branchHere}
                       </button>
                     )}
                     {m.events.length > 0 && (
                       <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                        +{m.events.length} timeline event{m.events.length === 1 ? "" : "s"}
-                        {m.update && m.update.figures.length > 0 && `, ${m.update.figures.length} figures`}
-                        {m.update && m.update.powers.length > 0 && `, ${m.update.powers.length} powers`}
+                        {t.added(m.events.length, m.update?.figures.length ?? 0, m.update?.powers.length ?? 0)}
                       </span>
                     )}
                   </div>
@@ -240,7 +221,7 @@ export function Thread({
           {!isStreaming && !isEditing && !forkingMidThread && flashpoints.length > 0 && path.length > 0 && (
             <div className="pt-1">
               <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-2">
-                Flashpoints
+                {t.flashpoints}
               </div>
               <div className="flex flex-col gap-1.5">
                 {flashpoints.map((f) => (
@@ -263,11 +244,7 @@ export function Thread({
         <div className="mx-auto max-w-2xl space-y-2">
           {(forkingMidThread || isEditing) && !isStreaming && (
             <div className="flex items-center justify-between gap-2 text-xs rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300 px-3 py-1.5">
-              <span>
-                {isEditing
-                  ? "Editing: sending creates a new branch from this point."
-                  : "Your next message starts a new branch from the reply above."}
-              </span>
+              <span>{isEditing ? t.editingBanner : t.forkingBanner}</span>
               <button
                 onClick={() => {
                   setEditParent(undefined);
@@ -276,7 +253,7 @@ export function Thread({
                 }}
                 className="font-medium hover:underline shrink-0"
               >
-                {isEditing ? "Cancel" : "Back to latest"}
+                {isEditing ? t.cancel : t.backToLatest}
               </button>
             </div>
           )}
@@ -292,13 +269,14 @@ export function Thread({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
+                // Let the Korean IME finish composing before Enter sends.
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   submit();
                 }
               }}
               rows={1}
-              placeholder={empty ? "What if...?" : "Push the scenario further..."}
+              placeholder={empty ? t.placeholderNew : t.placeholderMore}
               disabled={isStreaming}
               className="flex-1 resize-none rounded-2xl border border-black/10 dark:border-white/15 bg-transparent px-4 py-2.5 text-sm outline-none focus:border-black/30 dark:focus:border-white/40 disabled:opacity-50"
             />
@@ -308,7 +286,7 @@ export function Thread({
                 onClick={onStop}
                 className="rounded-full border border-black/20 dark:border-white/25 px-4 py-2.5 text-sm font-medium hover:bg-black/[.04] dark:hover:bg-white/[.06]"
               >
-                Stop
+                {t.stop}
               </button>
             ) : (
               <button
@@ -316,14 +294,11 @@ export function Thread({
                 disabled={!input.trim()}
                 className="rounded-full bg-black text-white dark:bg-white dark:text-black px-4 py-2.5 text-sm font-medium disabled:opacity-40"
               >
-                Send
+                {t.send}
               </button>
             )}
           </form>
-          <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
-            Enter to send, Shift+Enter for a new line. Pre-divergence facts are checked against
-            Wikipedia; everything after is speculation.
-          </p>
+          <p className="text-[11px] text-zinc-400 dark:text-zinc-500">{t.hint}</p>
         </div>
       </div>
     </div>

@@ -24,25 +24,33 @@ type GroundingJson = {
 const ANALYSIS_SYSTEM =
   "You extract structured data for an alternate-history app. Reply with ONLY a JSON object, no prose, no markdown fences.";
 
-function analysisPrompt(prompt: string): string {
+export type Lang = "en" | "ko";
+
+function analysisPrompt(prompt: string, lang: Lang): string {
+  const inLang = lang === "ko" ? " written in Korean (한국어)" : "";
   return [
     "The user proposed this alternate-history scenario:",
     `"""${prompt}"""`,
     "",
     "Return JSON with:",
-    '- "title": a short scenario title (max 8 words)',
-    '- "divergence": one short sentence (max 30 words) stating the point of divergence from real history',
+    `- "title": a short scenario title (max 8 words)${inLang}`,
+    `- "divergence": one short sentence (max 30 words) stating the point of divergence from real history${inLang}`,
     '- "divergence_year": the calendar year of the divergence as an integer (negative for BCE), or null if unclear',
-    '- "queries": 3 to 4 English Wikipedia search queries that would retrieve the REAL history immediately before and around the divergence (people, events, institutions, technologies involved). Use article-like names, e.g. "Printing press", "Johannes Gutenberg".',
+    '- "queries": 3 to 4 English Wikipedia search queries that would retrieve the REAL history immediately before and around the divergence (people, events, institutions, technologies involved). Use article-like names in English, e.g. "Printing press", "Johannes Gutenberg".',
   ].join("\n");
 }
 
+const STATUS: Record<Lang, { identify: string; wiki: string }> = {
+  en: { identify: "Identifying the point of divergence...", wiki: "Checking real history on Wikipedia..." },
+  ko: { identify: "분기점을 파악하는 중...", wiki: "위키백과에서 실제 역사를 확인하는 중..." },
+};
+
 /** First turn: ask the model for the divergence point and 3-4 Wikipedia queries. */
-async function analyzeDivergence(prompt: string): Promise<GroundingJson> {
+async function analyzeDivergence(prompt: string, lang: Lang): Promise<GroundingJson> {
   const text = await complete(
     [
       { role: "system", content: ANALYSIS_SYSTEM },
-      { role: "user", content: analysisPrompt(prompt) },
+      { role: "user", content: analysisPrompt(prompt, lang) },
     ],
     { maxTokens: 1200, temperature: 0.1 }
   );
@@ -106,19 +114,21 @@ export function searchQueryFromMessage(msg: string): string {
 export async function groundTurn(
   meta: ScenarioMeta,
   latestUserMessage: string,
-  onStatus: (text: string) => void
+  onStatus: (text: string) => void,
+  lang: Lang = "en"
 ): Promise<Grounding> {
   const isNew = !meta.title;
   let title = meta.title ?? "";
   let divergence = meta.divergence ?? "";
   let divergenceYear: number | null = meta.divergenceYear ?? null;
   let titles: string[] = [...(meta.sourceTitles ?? [])];
+  const status = STATUS[lang];
 
   if (isNew) {
-    onStatus("Identifying the point of divergence...");
+    onStatus(status.identify);
     let analysis: GroundingJson = {};
     try {
-      analysis = await analyzeDivergence(latestUserMessage);
+      analysis = await analyzeDivergence(latestUserMessage, lang);
       if (!analysis.title) console.warn("[grounding] analysis returned no usable JSON");
     } catch (err) {
       // Fall through to heuristics; the narrator can still run with weaker grounding.
@@ -131,12 +141,12 @@ export async function groundTurn(
     const queries = (analysis.queries ?? []).filter((q) => typeof q === "string" && q.trim());
     if (queries.length === 0) queries.push(searchQueryFromMessage(latestUserMessage));
 
-    onStatus("Checking real history on Wikipedia...");
+    onStatus(status.wiki);
     const results = await Promise.all(queries.slice(0, 4).map((q) => searchTitles(q, 2)));
     // Interleave: first hit of each query, then second hits.
     for (let i = 0; i < 2; i++) for (const r of results) if (r[i]) titles.push(r[i]);
   } else {
-    onStatus("Checking real history on Wikipedia...");
+    onStatus(status.wiki);
     const q = searchQueryFromMessage(latestUserMessage);
     const found = q.length > 3 ? await searchTitles(q, 2) : [];
     titles.push(...found);

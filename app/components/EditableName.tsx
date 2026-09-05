@@ -58,15 +58,15 @@ export function EditableName({
   }
 
   return (
-    <span className={`group/name inline-flex items-baseline gap-1 min-w-0 ${className ?? ""}`}>
-      <span className="truncate">{children ?? value}</span>
+    <span className={`group/name flex items-baseline gap-1 max-w-full ${className ?? ""}`}>
+      <span className="min-w-0 break-words">{children ?? value}</span>
       <button
         type="button"
         onClick={() => {
           setDraft(value);
           setEditing(true);
         }}
-        className="opacity-0 group-hover/name:opacity-60 focus:opacity-100 hover:!opacity-100 text-[11px] leading-none transition-opacity"
+        className="shrink-0 opacity-0 group-hover/name:opacity-60 focus:opacity-100 hover:!opacity-100 text-[11px] leading-none transition-opacity"
         title="Rename"
         aria-label={`Rename ${value}`}
       >

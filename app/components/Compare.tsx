@@ -9,7 +9,7 @@ import {
   sortEvents,
   type Scenario,
 } from "@/lib/scenario";
-import { EventRow, Legend } from "./Timeline";
+import { EventList, Legend } from "./Timeline";
 
 function Column({
   title,
@@ -41,13 +41,7 @@ function Column({
       {events.length === 0 ? (
         <p className="text-xs text-zinc-500 dark:text-zinc-400 pl-2">No events yet on this branch.</p>
       ) : (
-        <ol className="space-y-2.5 border-l border-zinc-200 dark:border-zinc-800 ml-1 pl-2.5 py-1">
-          {events.map((ev, i) => (
-            <li key={`${ev.year}-${i}`} className="list-none">
-              <EventRow ev={ev} sources={scenario.sources} compact />
-            </li>
-          ))}
-        </ol>
+        <EventList events={events} sources={scenario.sources} />
       )}
     </div>
   );
@@ -56,11 +50,9 @@ function Column({
 export function Compare({
   scenario,
   onShowBranch,
-  compact = false,
 }: {
   scenario: Scenario;
   onShowBranch: (leafId: string) => void;
-  compact?: boolean;
 }) {
   const tips = useMemo(() => leaves(scenario), [scenario]);
   const [pickA, setA] = useState<string>("");
@@ -125,13 +117,7 @@ export function Compare({
           <h4 className="text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
             Shared before the fork
           </h4>
-          <ol className="space-y-2.5 border-l border-zinc-200 dark:border-zinc-800 ml-1 pl-3 py-1">
-            {shared.map((ev, i) => (
-              <li key={`${ev.year}-${i}`} className="list-none">
-                <EventRow ev={ev} sources={scenario.sources} compact={compact} />
-              </li>
-            ))}
-          </ol>
+          <EventList events={shared} sources={scenario.sources} />
         </section>
       )}
 

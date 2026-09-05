@@ -50,7 +50,10 @@ const u2 = {
     { year: 1456, month: 7, day: 22, label: "Hunyadi breaks the Ottoman siege of Belgrade with Byzantine envoys present", type: "alt", source: null },
   ],
   figures: [{ name: "John Hunyadi", role: "Regent-Governor of Hungary", faction: "Kingdom of Hungary", status: "rising", realFate: "Won at Belgrade in 1456 and died of plague weeks later.", altFate: "Victor of Belgrade and the natural leader of a Christian league.", source: null }],
-  powers: [{ name: "Kingdom of Hungary", kind: "kingdom", strength: 3, posture: "expanding", interests: ["Push the Ottoman frontier back beyond the Danube", "Lead, not follow, any crusade"], relations: [{ with: "Ottoman Empire", kind: "war" }, { with: "Byzantine Empire", kind: "ally" }] }],
+  powers: [
+    { name: "Kingdom of Hungary", kind: "kingdom", strength: 3, posture: "expanding", interests: ["Push the Ottoman frontier back beyond the Danube", "Lead, not follow, any crusade"], relations: [{ with: "Ottoman Empire", kind: "war" }, { with: "Byzantine Empire", kind: "ally" }] },
+    { name: "Holy Roman Empire of the German Nation", kind: "empire", strength: 3, posture: "fracturing", interests: ["Keep the princes from backing rival crusade leaders", "Avoid paying for a war on the Danube"], relations: [{ with: "Kingdom of Hungary", kind: "rival" }, { with: "Republic of Venice", kind: "trade" }] },
+  ],
   ledger: [{ year: 1456, ours: "Belgrade holds; Hunyadi dies of plague.", theirs: "Belgrade holds and a Christian league forms around Hunyadi.", source: null }],
   flashpoints: ["Does the Byzantine Church accept Union with Rome as the price of the league?", "Who commands the league's fleet: Venice or Genoa?", "Does Mehmed II strike Hungary or Constantinople first?"],
 };
@@ -64,9 +67,15 @@ const u3 = {
   ledger: [{ year: 1457, ours: "Mehmed II secure on his throne, campaigning in Serbia.", theirs: "Mehmed II deposed; Ottoman court fractures under a regency.", source: null }],
   flashpoints: ["Does Constantine XI exploit the regency to retake Thracian towns?", "Which faction controls the young Bayezid?", "Do the Karamanids rise in Anatolia?"],
 };
-const prose1 = `When **Mehmed II**'s great bombard first roared against the Theodosian Walls on 6 April 1453, the defenders flinched, but the masonry held [4]. In our timeline the walls, patched and undermanned, gave way at the St. Romanus gate on the morning of 29 May [1]. Here, a chance musket ball misses **Giovanni Giustiniani**, the Genoese captain whose withdrawal broke the defence, and the stockade holds through the third assault [1].
+const prose1 = `### The walls hold
+
+When **Mehmed II**'s great bombard first roared against the Theodosian Walls on 6 April 1453, the defenders flinched, but the masonry held [4]. In our timeline the walls, patched and undermanned, gave way at the St. Romanus gate on the morning of 29 May [1]. Here, a chance musket ball misses **Giovanni Giustiniani**, the Genoese captain whose withdrawal broke the defence, and the stockade holds through the third assault [1].
+
+### A sultan humiliated
 
 The Sultan, twenty-one years old and staking his reign on the City, watches the Janissaries recoil from the breach. By nightfall the assault has failed and the camp is muttering about Halil Pasha's warnings. Within days the Ottoman army withdraws to Adrianople, its prestige badly dented.
+
+### An emperor with options
 
 **Constantine XI Palaiologos**, who in our history died on the walls [2], instead finds himself the most celebrated man in Christendom, an emperor of a single city with a suddenly interested West. Which lifeline does he reach for first?`;
 const prose2 = `The papal legate arrives in March 1455 with terms that would have been unthinkable two years earlier: a crusade preached across Europe, Venetian and Genoese galleys under a single admiral, and Hungarian troops on the Danube. The price is Union with Rome.

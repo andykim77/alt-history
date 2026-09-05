@@ -20,7 +20,7 @@ import {
   type Scenario,
   type Store,
 } from "@/lib/scenario";
-import type { ChatRequest, StreamEvent } from "@/lib/types";
+import type { ChatRequest, StreamEvent, WorldUpdate } from "@/lib/types";
 import { Sidebar } from "./components/Sidebar";
 import { Thread } from "./components/Thread";
 import { SourceList, Timeline } from "./components/Timeline";
@@ -48,6 +48,8 @@ export default function ChatClient() {
   const [tab, setTab] = useState<PanelTab>("timeline");
   const [drawer, setDrawer] = useState<Drawer>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /** Set by Stop: finish the word-by-word reveal immediately. */
+  const skipRevealRef = useRef(false);
 
   // ----- persistence -----
   useEffect(() => {
@@ -132,6 +134,7 @@ export default function ChatClient() {
 
   // ----- streaming -----
   function stop() {
+    skipRevealRef.current = true;
     abortRef.current?.abort();
   }
 
@@ -186,8 +189,10 @@ export default function ChatClient() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    skipRevealRef.current = false;
     let content = "";
     let finished = false;
+    let revealTimer: ReturnType<typeof setInterval> | null = null;
 
     try {
       const res = await fetch("/api/chat", {
@@ -204,16 +209,35 @@ export default function ChatClient() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let pendingDelta = "";
-      let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-      const flush = () => {
-        if (!pendingDelta) return;
-        content += pendingDelta;
-        pendingDelta = "";
-        const snapshot = content;
-        updateNode(scenarioId, assistantNode.id, (n) => ({ ...n, content: snapshot }));
+      // The text is revealed word by word at a steady pace, so a reply that
+      // arrives in one piece (the gateway) or in ragged chunks (streaming) prints
+      // smoothly. `target` is what has arrived; `content` is what is shown.
+      let target = "";
+      let streamEnded = false;
+      // Held in an object because it is assigned inside a closure.
+      const pending: { update: WorldUpdate | null } = { update: null };
+      let revealDone: () => void = () => {};
+      const revealed = new Promise<void>((resolve) => (revealDone = resolve));
+      const tick = () => {
+        if (skipRevealRef.current) content = target;
+        if (content.length < target.length) {
+          const remaining = target.length - content.length;
+          let next = content.length + Math.max(2, Math.min(14, Math.ceil(remaining / 60)));
+          // Extend to the next whitespace so markdown markers do not flicker mid-word.
+          const ws = /\s/.exec(target.slice(next, next + 24));
+          if (ws) next += ws.index + 1;
+          content = target.slice(0, Math.min(target.length, next));
+          const snapshot = content;
+          updateNode(scenarioId, assistantNode.id, (n) => ({ ...n, content: snapshot }));
+        }
+        if (streamEnded && content.length >= target.length) {
+          if (revealTimer) clearInterval(revealTimer);
+          revealTimer = null;
+          revealDone();
+        }
       };
+      revealTimer = setInterval(tick, 16);
 
       const handle = (ev: StreamEvent) => {
         switch (ev.type) {
@@ -246,29 +270,19 @@ export default function ChatClient() {
             }));
             break;
           case "delta":
-            pendingDelta += ev.text;
-            if (!flushTimer) {
-              flushTimer = setTimeout(() => {
-                flushTimer = null;
-                flush();
-              }, 40);
-            }
+            target += ev.text;
             break;
           case "update":
-            flush();
-            updateNode(scenarioId, assistantNode.id, (n) => ({
-              ...n,
-              update: ev.update,
-              events: ev.update.events,
-            }));
+            // Applied once the text has finished printing, so the dossier does not
+            // jump ahead of the narration.
+            pending.update = ev.update;
             break;
           case "error":
-            flush();
+            skipRevealRef.current = true;
             updateNode(scenarioId, assistantNode.id, (n) => ({ ...n, status: "error", error: ev.message }));
             finished = true;
             break;
           case "done":
-            flush();
             finished = true;
             break;
         }
@@ -290,8 +304,12 @@ export default function ChatClient() {
           }
         }
       }
-      if (flushTimer) clearTimeout(flushTimer);
-      flush();
+      streamEnded = true;
+      await revealed;
+      if (pending.update) {
+        const update = pending.update;
+        updateNode(scenarioId, assistantNode.id, (n) => ({ ...n, update, events: update.events }));
+      }
       if (!finished) {
         updateNode(scenarioId, assistantNode.id, (n) => ({
           ...n,
@@ -303,11 +321,13 @@ export default function ChatClient() {
       const aborted = controller.signal.aborted;
       updateNode(scenarioId, assistantNode.id, (n) => ({
         ...n,
-        content: n.content || content,
+        content: n.content.length >= content.length ? n.content : content,
         status: aborted ? "stopped" : "error",
         error: aborted ? undefined : err instanceof Error ? err.message : "Something went wrong.",
       }));
     } finally {
+      if (revealTimer) clearInterval(revealTimer);
+      skipRevealRef.current = false;
       // Clear the streaming flag; keep 'stopped'/'error' markers, drop 'streaming'.
       updateNode(scenarioId, assistantNode.id, (n) =>
         n.status === "streaming" ? { ...n, status: undefined } : n
@@ -344,35 +364,34 @@ export default function ChatClient() {
         ) : (
           <p className="text-xs text-zinc-500 mt-0.5">The world state builds as you explore.</p>
         )}
-        <div className="mt-2 flex flex-wrap gap-1">
+        <div className="mt-2.5 grid grid-cols-3 gap-1" role="tablist">
           {TABS.map((t) => (
             <button
               key={t.id}
+              role="tab"
+              aria-selected={tab === t.id}
               onClick={() => setTab(t.id)}
-              className={`rounded-full px-2.5 py-1 text-[11.5px] border transition-colors ${
+              className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-[12px] leading-none transition-colors ${
                 tab === t.id
                   ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white"
                   : "border-black/10 dark:border-white/15 text-zinc-600 dark:text-zinc-300 hover:bg-black/[.04] dark:hover:bg-white/[.06]"
               }`}
             >
-              {t.label}
-              {counts[t.id] > 0 && (
-                <span className={`ml-1 font-mono ${tab === t.id ? "opacity-70" : "text-zinc-400"}`}>
-                  {counts[t.id]}
-                </span>
-              )}
+              <span>{t.label}</span>
+              <span
+                className={`font-mono text-[10.5px] tabular-nums ${
+                  tab === t.id ? "opacity-70" : "text-zinc-400 dark:text-zinc-500"
+                } ${counts[t.id] > 0 ? "" : "invisible"}`}
+              >
+                {counts[t.id] || 0}
+              </span>
             </button>
           ))}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4">
         {tab === "timeline" && (
-          <Timeline
-            events={pathEvents}
-            sources={active.sources}
-            divergenceYear={active.divergenceYear}
-            compact={drawer === "right"}
-          />
+          <Timeline events={pathEvents} sources={active.sources} divergenceYear={active.divergenceYear} />
         )}
         {tab === "figures" && <Figures figures={world.figures} sources={active.sources} onRename={renameEntity} />}
         {tab === "powers" && <Powers powers={world.powers} onRename={renameEntity} />}
@@ -381,7 +400,6 @@ export default function ChatClient() {
         {tab === "compare" && (
           <Compare
             scenario={active}
-            compact={drawer === "right"}
             onShowBranch={(leafId) => {
               setLeaf(active.id, leafId);
               setDrawer(null);

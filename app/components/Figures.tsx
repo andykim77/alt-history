@@ -39,7 +39,7 @@ export function Figures({
             className="rounded-xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/[.03] p-3"
           >
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="font-serif text-[15px] leading-tight">
                   <EditableName value={f.name} onRename={(next) => onRename(f.name, next)}>
                     {src ? (

@@ -21,15 +21,28 @@ const RELATION: Record<Relation, string> = {
   war: "border-red-500/60 text-red-700 dark:text-red-300",
 };
 
+/** Plain-language tier for the 1-5 strength score. */
+const TIER: Record<number, string> = {
+  1: "Marginal",
+  2: "Minor power",
+  3: "Regional power",
+  4: "Major power",
+  5: "Hegemon",
+};
+
 function Strength({ n }: { n: number }) {
+  const tier = TIER[n] ?? TIER[3];
   return (
-    <span className="inline-flex gap-0.5" title={`Strength ${n}/5`} aria-label={`Strength ${n} of 5`}>
-      {[1, 2, 3, 4, 5].map((i) => (
-        <span
-          key={i}
-          className={`h-2 w-1.5 rounded-sm ${i <= n ? "bg-current" : "bg-current opacity-20"}`}
-        />
-      ))}
+    <span className="inline-flex items-center gap-1.5" title={`Strength ${n}/5`} aria-label={`${tier}, strength ${n} of 5`}>
+      <span className="inline-flex gap-0.5" aria-hidden>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <span
+            key={i}
+            className={`h-2 w-1.5 rounded-sm ${i <= n ? "bg-current" : "bg-current opacity-20"}`}
+          />
+        ))}
+      </span>
+      <span>{tier}</span>
     </span>
   );
 }
@@ -60,12 +73,11 @@ export function Powers({
             className="rounded-xl border border-black/10 dark:border-white/10 bg-white/60 dark:bg-white/[.03] p-3"
           >
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="font-serif text-[15px] leading-tight">
                   <EditableName value={p.name} onRename={(next) => onRename(p.name, next)} />
                 </div>
-                <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 flex items-center gap-2">
-                  {p.kind && <span className="capitalize">{p.kind}</span>}
+                <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
                   <Strength n={p.strength} />
                 </div>
               </div>

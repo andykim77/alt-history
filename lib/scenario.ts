@@ -183,7 +183,8 @@ export type WorldState = {
   flashpoints: string[];
 };
 
-export const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+/** Lowercased, letters and digits in any script (Hangul, Cyrillic, CJK…), runs of anything else collapsed to one space. */
+export const norm = (s: string) => s.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /** Resolve a name through the rename map, following chains (A→B, B→C). */
 export function resolveName(name: string, renames: Renames | undefined): string {

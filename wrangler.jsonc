@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "alt-history",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-09-09",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    // Self-reference binding required by OpenNext (service name must match "name").
+    { "binding": "WORKER_SELF_REFERENCE", "service": "alt-history" }
+  ],
+  "routes": [{ "pattern": "alt-history.koracles.com", "custom_domain": true }],
+  "observability": { "enabled": true },
+  // Non-secret settings. Secrets (OPENROUTER_API_KEY, KORACLE_CREDENTIALS_JSON)
+  // are set with `npx wrangler secret put <NAME>` and never live in this file.
+  "vars": {
+    "LLM_PROVIDER": "koracle",
+    "KORACLE_PROVIDER": "anthropic",
+    "KORACLE_MODEL": "claude-sonnet-5",
+    "OPENROUTER_MODEL": "nvidia/nemotron-3-super-120b-a12b:free",
+    "SITE_URL": "https://alt-history.koracles.com"
+  }
+}

@@ -234,29 +234,53 @@ export default function ChatClient() {
       const decoder = new TextDecoder();
       let buffer = "";
 
-      // The text is revealed word by word at a steady pace, so a reply that
-      // arrives in one piece (the gateway) or in ragged chunks (streaming) prints
-      // smoothly. `target` is what has arrived; `content` is what is shown.
+      // The text is revealed one line at a time, so a reply that arrives in one
+      // piece (the gateway) or in ragged chunks (streaming) prints like a page
+      // being typed out rather than dumped. `target` is what has arrived;
+      // `content` is what is shown. In markdown a "line" is a paragraph, a
+      // heading, a list item, or a blank separator, so the reader sees whole
+      // thoughts land, each after a pause proportional to its length.
       let target = "";
       let streamEnded = false;
       // Held in an object because it is assigned inside a closure.
       const pending: { update: WorldUpdate | null } = { update: null };
       let revealDone: () => void = () => {};
       const revealed = new Promise<void>((resolve) => (revealDone = resolve));
+      const CHARS_PER_MS = 0.7; // ~700 chars/s: a 6,000-char chapter lands in ~9 s
+      const LINE_GAP_MS = 120; // minimum pause between two visible lines
+      const CATCH_UP_CHARS = 1500; // once this much is owed (throttled tab), skip the gap
+      const PARTIAL_AFTER = 240; // streaming: show a long unfinished paragraph anyway
+      let budget = 0;
       let lastTick = Date.now();
+      let lastLineAt = 0;
       const tick = () => {
         const now = Date.now();
-        const elapsed = Math.min(2000, now - lastTick);
+        budget = Math.min(4000, budget + (now - lastTick) * CHARS_PER_MS);
         lastTick = now;
+        const before = content.length;
         if (skipRevealRef.current) content = target;
-        if (content.length < target.length) {
-          // About 900 characters per second, measured by wall clock so a throttled
-          // background tab catches up instead of dripping one step per second.
-          let next = content.length + Math.max(2, Math.ceil(elapsed * 0.9));
-          // Extend to the next whitespace so markdown markers do not flicker mid-word.
-          const ws = /\s/.exec(target.slice(next, next + 24));
-          if (ws) next += ws.index + 1;
-          content = target.slice(0, Math.min(target.length, next));
+        while (content.length < target.length) {
+          const nl = target.indexOf("\n", content.length);
+          let end = nl === -1 ? target.length : nl + 1;
+          if (nl === -1 && !streamEnded) {
+            // A paragraph still being streamed: hold it until its newline arrives,
+            // unless it is already long enough to be worth reading.
+            const tail = target.length - content.length;
+            if (tail < PARTIAL_AFTER) break;
+            const ws = target.lastIndexOf(" ", target.length - 1);
+            if (ws <= content.length) break;
+            end = ws + 1;
+          }
+          const cost = end - content.length;
+          const isBlank = target.slice(content.length, end).trim() === "";
+          // A single enormous line must not stall forever behind the budget cap.
+          if (budget < Math.min(cost, 3000)) break;
+          if (!isBlank && budget < CATCH_UP_CHARS && now - lastLineAt < LINE_GAP_MS) break;
+          budget = Math.max(0, budget - cost);
+          if (!isBlank) lastLineAt = now;
+          content = target.slice(0, end);
+        }
+        if (content.length !== before) {
           const snapshot = content;
           updateNode(scenarioId, assistantNode.id, (n) => ({ ...n, content: snapshot }));
         }
@@ -266,7 +290,7 @@ export default function ChatClient() {
           revealDone();
         }
       };
-      revealTimer = setInterval(tick, 16);
+      revealTimer = setInterval(tick, 40);
 
       const handle = (ev: StreamEvent) => {
         switch (ev.type) {

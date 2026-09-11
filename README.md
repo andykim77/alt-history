@@ -60,9 +60,11 @@ piece). Switch with `LLM_PROVIDER`.
    `KORACLE_CREDENTIALS_JSON` on hosts that do not have the folder. Pick the upstream
    with `KORACLE_PROVIDER` (`anthropic` default, `openai`, `google`) and optionally
    `KORACLE_MODEL`. The gateway allows 10 requests per minute and 200 per day, resetting
-   at midnight KST, and does not stream, so the reply appears all at once; a chapter of
-   800 to 1,000 words (1,000 to 1,200 Korean characters) plus its dossier takes about
-   85 seconds on Opus. The gateway accepts up to 8,192 output tokens, but its proxy
+   at midnight KST, and does not stream (it ignores `stream` flags and `effort`
+   settings), so the reply arrives in one piece and the client prints it line by line;
+   a chapter of 800 to 1,000 words (1,000 to 1,200 Korean characters) plus its dossier
+   takes about 85 seconds on Opus 5 and about 30% less on Sonnet 5, the current default
+   (`KORACLE_MODEL=claude-sonnet-5`). The gateway accepts up to 8,192 output tokens, but its proxy
    drops any reply that takes longer than roughly 100 seconds (HTTP 524), and Opus's
    token counts include hidden reasoning, so the app caps `max_tokens` at 6,000 and
    the prompt targets are sized to land just under it. Its 20k-character cap on the

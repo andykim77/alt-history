@@ -246,7 +246,7 @@ export default function ChatClient() {
       const pending: { update: WorldUpdate | null } = { update: null };
       let revealDone: () => void = () => {};
       const revealed = new Promise<void>((resolve) => (revealDone = resolve));
-      const CHARS_PER_MS = 0.7; // ~700 chars/s: a 6,000-char chapter lands in ~9 s
+      const CHARS_PER_MS = 0.5; // ~500 chars/s: a 6,000-char chapter lands in ~12 s
       const LINE_GAP_MS = 120; // minimum pause between two visible lines
       const CATCH_UP_CHARS = 1500; // once this much is owed (throttled tab), skip the gap
       const PARTIAL_AFTER = 240; // streaming: show a long unfinished paragraph anyway
@@ -255,7 +255,10 @@ export default function ChatClient() {
       let lastLineAt = 0;
       const tick = () => {
         const now = Date.now();
-        budget = Math.min(4000, budget + (now - lastTick) * CHARS_PER_MS);
+        // Accrue only while text is waiting to be shown; otherwise the budget
+        // would fill up during the long wait for the gateway and the first
+        // few thousand characters would land in one go.
+        budget = content.length < target.length ? Math.min(4000, budget + (now - lastTick) * CHARS_PER_MS) : 0;
         lastTick = now;
         const before = content.length;
         if (skipRevealRef.current) content = target;
